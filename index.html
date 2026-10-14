@@ -22,6 +22,8 @@
   #topbar{top:12px;left:50%;transform:translateX(-50%);display:flex;gap:6px;padding:6px}
   #hint{left:50%;bottom:12px;transform:translateX(-50%);padding:7px 14px;font-size:12px;color:var(--muted);white-space:nowrap}
   #hint b{color:var(--text);font-weight:600}
+  #drive-hud{left:50%;bottom:12px;transform:translateX(-50%);padding:8px 16px;font-size:12.5px;color:var(--muted);white-space:nowrap}
+  #drive-hud b{color:var(--text)} #drive-hud .spd{font-size:20px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums}
   .brand{display:flex;align-items:center;gap:10px;margin:0 0 10px}
   .logo{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;font-weight:800;color:#0b0f17}
   .brand h1{font-size:15px;margin:0;letter-spacing:.3px}
@@ -82,6 +84,8 @@
 <div id="boot">正在加载 three.js 与 cannon-es …</div>
 
 <div id="topbar" class="panel">
+  <button class="btn" id="b-drive" title="C">🚗 驾驶</button>
+  <button class="btn" id="b-bullet" title="T">⏱ 子弹时间</button>
   <button class="btn" id="b-audio" title="碰撞音效（按冲击速度合成）">🔇 音效</button>
   <button class="btn" id="b-pause" title="P">⏸ 暂停</button>
   <button class="btn" id="b-panels" title="H">隐藏面板</button>
@@ -90,7 +94,7 @@
 <aside id="left" class="panel">
   <div class="brand">
     <div class="logo">R</div>
-    <div><h1>刚体沙盒</h1><p>three.js r164 · cannon-es · 实例化渲染</p></div>
+    <div><h1>刚体沙盒</h1><p>three.js · cannon-es · 实例化 · 辉光</p></div>
   </div>
 
   <section>
@@ -103,10 +107,11 @@
     </div>
     <div class="row"><label>太阳高度 <span id="v-elev"></span></label><input id="r-elev" type="range" min="3" max="89" step="1"></div>
     <div class="row"><label>太阳方位 <span id="v-azim"></span></label><input id="r-azim" type="range" min="0" max="359" step="1"></div>
-    <div class="grid three" style="margin-top:8px">
+    <div class="grid" style="margin-top:8px">
       <button class="btn on" id="b-shadow">阴影</button>
       <button class="btn on" id="b-grid">网格</button>
       <button class="btn" id="b-wire">线框</button>
+      <button class="btn on" id="b-bloom">辉光后处理</button>
     </div>
   </section>
 
@@ -119,6 +124,14 @@
     <div class="grid" style="margin-top:8px">
       <button class="btn" id="b-zerog" title="G">零重力</button>
       <button class="btn" id="b-sparks">碰撞火花</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>鼠标点击 <small>X 切换</small></h2>
+    <div class="grid">
+      <button class="btn on" data-mode="shoot">🎯 发射钢球</button>
+      <button class="btn" data-mode="blast">💥 引爆炸弹</button>
     </div>
   </section>
 
@@ -143,6 +156,8 @@
       <button class="btn" data-build="dominoes">多米诺连锁</button>
       <button class="btn" data-build="cradle">牛顿摆</button>
       <button class="btn" data-build="pyramid">方块金字塔</button>
+      <button class="btn" data-build="wreck">砖墙 + 拆迁球</button>
+      <button class="btn" data-build="ramp">特技坡道（开车）</button>
     </div>
   </section>
 
@@ -193,8 +208,12 @@
 </aside>
 
 <div id="hint" class="panel">
-  <b>点空白</b> 发射钢球 · <b>点物体</b> 戳一下 · <b>拖物体</b> 抓起/抛出 · <b>拖空白</b> 旋转 · <b>右键拖</b> 平移 · <b>滚轮</b> 缩放 ·
-  快捷键 <b>空格</b> 发射 <b>G</b> 零重力 <b>B</b> 黑洞 <b>F</b> 冲击波 <b>P</b> 暂停 <b>R</b> 清空 <b>H</b> 面板
+  <b>点击</b> 发射/引爆 · <b>拖物体</b> 抓起/抛出 · <b>拖空白</b> 旋转 · <b>右键拖</b> 平移 · <b>滚轮</b> 缩放 ·
+  <b>C</b> 开车 <b>X</b> 点击模式 <b>T</b> 子弹时间 <b>空格</b> 发射 <b>G</b> 零重力 <b>B</b> 黑洞 <b>F</b> 冲击波 <b>P</b> 暂停 <b>R</b> 清空 <b>H</b> 面板
+</div>
+<div id="drive-hud" class="panel hidden">
+  <span class="spd" id="d-speed">0</span> km/h ·
+  <b>W/S</b> 油门/倒车 · <b>A/D</b> 转向 · <b>空格</b> 手刹 · <b>R</b> 翻正 · <b>C</b> 下车
 </div>
 <div id="toast"></div>
 
@@ -209,10 +228,14 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import * as CANNON from 'cannon-es';
 
 const $ = id => document.getElementById(id);
-const MAX_BODIES = 700;
+const MAX_BODIES = 1000;
 const FIXED_DT = 1 / 60;
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = arr => arr[(Math.random() * arr.length) | 0];
@@ -220,7 +243,9 @@ const pick = arr => arr[(Math.random() * arr.length) | 0];
 const state = {
   env: 'day', palette: [], grid: true, shadows: true, wire: false, sparks: true,
   gravity: -9.8, zeroG: false, timeScale: 1, paused: false, blackHole: false, audio: false,
+  bloom: true, bulletTime: false, clickMode: 'shoot',
 };
+const effectiveTimeScale = () => state.timeScale * (state.bulletTime ? 0.15 : 1);
 
 /* ---------------- 渲染器 / 场景 ---------------- */
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -229,11 +254,18 @@ renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.info.autoReset = false; // 后处理会多次 render，手动按帧清零才能统计整帧
 $('stage').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(48, innerWidth / innerHeight, 0.1, 500);
 camera.position.set(20, 14, 24);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.5, 0.4, 0.9);
+composer.addPass(bloomPass);
+composer.addPass(new OutputPass());
 
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -289,6 +321,14 @@ const mats = {
   box: new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.05, roughness: 0.5 }),
   cyl: new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.45, roughness: 0.32 }),
 };
+// 霓虹预设下让物体按各自的实例颜色自发光（instanceColor 默认只影响漫反射）
+for (const m of Object.values(mats)) {
+  m.emissive = new THREE.Color(0xffffff); m.emissiveIntensity = 0;
+  m.onBeforeCompile = sh => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>',
+      '#include <emissivemap_fragment>\n#ifdef USE_COLOR\n  totalEmissiveRadiance *= vColor.rgb;\n#endif');
+  };
+}
 const geos = {
   sphere: new THREE.SphereGeometry(1, 32, 20),
   box: new RoundedBoxGeometry(1, 1, 1, 3, 0.07),
@@ -339,6 +379,8 @@ Object.assign(world.defaultContactMaterial, { friction: 0.35, restitution: 0.3, 
 const groundPhys = new CANNON.Material('ground');
 const groundBody = new CANNON.Body({ mass: 0, shape: new CANNON.Plane(), material: groundPhys });
 groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+// 静态刚体的 AABB 在构造时就按单位旋转算好了，改姿态后必须标记重算，否则射线（车轮悬挂）在 z>0 半边打不到地面
+groundBody.aabbNeedsUpdate = true;
 world.addBody(groundBody);
 // 骨牌：cannon 的摩擦按重力估算滑动上限，斜靠时会被高估，骨牌会互相撑住不倒；
 // 实测骨牌间摩擦取 0、与地面取 1.0（底部不打滑）时连锁才能完整传下去
@@ -392,13 +434,33 @@ function removeItem(it) {
   if (it.rig) {
     const r = rigs.find(r => r.item === it);
     if (r) { r.parts.forEach(({ c, ab }) => { world.removeConstraint(c); world.removeBody(ab); }); rigs = rigs.filter(x => x !== r); }
-    if (!rigs.length) clearRigVisuals();
+    if (!rigs.length) clearRigVisuals(); else rebuildStrings();
   }
 }
 
 function clearScene() {
   while (items.length) removeItem(items[items.length - 1]);
   clearRigVisuals();
+  clearStatics();
+}
+
+/* 静态场景件（坡道、塔吊）：有碰撞体，不参与模拟 */
+const staticParts = [];
+const staticGroup = new THREE.Group(); scene.add(staticGroup);
+function addStatic(dims, pos, quat, color) {
+  const body = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(dims[0] / 2, dims[1] / 2, dims[2] / 2)),
+    position: new CANNON.Vec3(pos.x, pos.y, pos.z) });
+  if (quat) { body.quaternion.set(quat.x, quat.y, quat.z, quat.w); body.aabbNeedsUpdate = true; }
+  world.addBody(body);
+  const mesh = new THREE.Mesh(new RoundedBoxGeometry(dims[0], dims[1], dims[2], 2, 0.04),
+    new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.3 }));
+  mesh.position.set(pos.x, pos.y, pos.z); if (quat) mesh.quaternion.copy(quat);
+  mesh.castShadow = mesh.receiveShadow = true;
+  staticGroup.add(mesh); staticParts.push({ body, mesh });
+}
+function clearStatics() {
+  for (const { body, mesh } of staticParts) { world.removeBody(body); staticGroup.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); }
+  staticParts.length = 0;
 }
 
 function randomRot() {
@@ -513,8 +575,7 @@ world.addEventListener('preStep', () => {
 
 const blastRings = [];
 function shockwave(origin = new THREE.Vector3(0, 0, 0)) {
-  for (const it of items) {
-    const b = it.body;
+  for (const b of dynBodies()) {
     const dx = b.position.x - origin.x, dz = b.position.z - origin.z, dy = b.position.y - origin.y;
     const d = Math.hypot(dx, dy, dz);
     if (d > 26) continue;
@@ -589,9 +650,30 @@ function buildDominoes() {
 }
 
 let strings = null;
+const stringMat = new THREE.LineBasicMaterial({ color: 0xcfd6e0, transparent: true, opacity: 0.85 });
 function clearRigVisuals() {
-  rigGroup.children.slice().forEach(c => { rigGroup.remove(c); c.geometry?.dispose(); });
+  rigGroup.children.slice().forEach(c => { rigGroup.remove(c); c.geometry?.dispose(); if (c.material !== stringMat) c.material?.dispose(); });
   strings = null;
+}
+function rebuildStrings() {
+  if (strings) { rigGroup.remove(strings); strings.geometry.dispose(); strings = null; }
+  const n = rigs.reduce((s, r) => s + r.anchors.length, 0);
+  if (!n) return;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 6), 3).setUsage(THREE.DynamicDrawUsage));
+  strings = new THREE.LineSegments(g, stringMat); strings.frustumCulled = false; rigGroup.add(strings);
+}
+function hangFrom(it, anchors, kind) {
+  const parts = anchors.map(a => {
+    const ab = new CANNON.Body({ mass: 0, shape: new CANNON.Sphere(0.01), position: a.clone() });
+    ab.collisionFilterGroup = 0; ab.collisionFilterMask = 0;
+    world.addBody(ab);
+    const c = new CANNON.DistanceConstraint(it.body, ab, a.distanceTo(it.body.position));
+    world.addConstraint(c);
+    return { c, ab };
+  });
+  it.rig = true; it.body.allowSleep = false;
+  rigs.push({ kind, item: it, anchors, parts });
 }
 function buildCradle(gapB = 0.004) {
   const n = 5, r = 0.55, L = 3.4, topY = 7.4, half = 1.5;
@@ -622,12 +704,9 @@ function buildCradle(gapB = 0.004) {
       world.addConstraint(c);
       return { c, ab };
     });
-    rigs.push({ item: it, anchors, parts });
+    rigs.push({ kind: 'cradle', item: it, anchors, parts });
   }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 2 * 2 * 3), 3).setUsage(THREE.DynamicDrawUsage));
-  strings = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xcfd6e0, transparent: true, opacity: 0.8 }));
-  strings.frustumCulled = false; rigGroup.add(strings);
+  rebuildStrings();
   toast('牛顿摆：双绳距离约束 + 弹性碰撞。可以拖起一颗或两颗球再松手');
 }
 // 摆球之间不走 cannon 的接触求解：顺序冲量 + 位置修正在一排紧贴的球上会凭空注入能量（实测末球摆得比初始还高）。
@@ -635,12 +714,13 @@ function buildCradle(gapB = 0.004) {
 const CRADLE_GROUP = 4, CRADLE_E = 0.995;
 const _n = new CANNON.Vec3();
 world.addEventListener('postStep', () => {
-  if (rigs.length < 2) return;
-  for (let pass = 0; pass < rigs.length; pass++) {
+  const cr = rigs.filter(r => r.kind === 'cradle');
+  if (cr.length < 2) return;
+  for (let pass = 0; pass < cr.length; pass++) {
     let changed = false;
-    for (let i = 0; i < rigs.length - 1; i++) {
-      const a = rigs[i].item.body, b = rigs[i + 1].item.body;
-      const ra = rigs[i].item.dims[0], rb = rigs[i + 1].item.dims[0];
+    for (let i = 0; i < cr.length - 1; i++) {
+      const a = cr[i].item.body, b = cr[i + 1].item.body;
+      const ra = cr[i].item.dims[0], rb = cr[i + 1].item.dims[0];
       b.position.vsub(a.position, _n);
       const d = _n.length();
       if (d > ra + rb + 0.012 || d === 0) continue;
@@ -666,6 +746,49 @@ function updateRigs() {
   }
   strings.geometry.setDrawRange(0, k / 3);
   strings.geometry.attributes.position.needsUpdate = true;
+}
+
+function buildWreck() {
+  const bw = 1.2, bh = 0.6, bd = 0.6, cols = 14, rows = 12, gap = 0.012;
+  const bricks = ['#b5523b', '#c4643f', '#a8472f', '#cf7a55', '#9c3f2c', '#b8604a'];
+  const x0 = -(cols * (bw + gap)) / 2;
+  let n = 0;
+  for (let r = 0; r < rows; r++) {
+    const y = bh / 2 + r * (bh + 0.002) + 0.002;
+    // 错缝砌法：奇数行两端各补半块
+    const layout = r % 2 === 0 ? Array(cols).fill(bw) : [bw / 2, ...Array(cols - 1).fill(bw), bw / 2];
+    let x = x0;
+    for (const w of layout) {
+      spawn('box', [w, bh, bd], { x: x + w / 2, y, z: 0 }, { color: pick(bricks), density: 1.6 });
+      x += w + gap; n++;
+    }
+  }
+  // 塔吊（静态）+ 拆迁球（距离约束摆锤）
+  const A = new CANNON.Vec3(0, 17.5, 0), L = 13, a = THREE.MathUtils.degToRad(72);
+  addStatic([0.8, 18, 0.8], { x: -12, y: 9, z: 0 }, null, 0xf2b705);
+  addStatic([12.8, 0.6, 0.6], { x: -5.6, y: 18.1, z: 0 }, null, 0xf2b705);
+  const ball = spawn('sphere', [1.3], { x: 0, y: A.y - L * Math.cos(a), z: L * Math.sin(a) },
+    { color: '#2b2f36', density: 2.5, linDamp: 0, angDamp: 0.1 });
+  hangFrom(ball, [A], 'wreck');
+  rebuildStrings();
+  toast(`砖墙 ${n} 块（错缝砌法）+ ${ball.body.mass.toFixed(0)} kg 拆迁球，已经放手`);
+}
+
+function buildRamp() {
+  const tilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -0.27);
+  // 坡面低端与地面齐平，否则会形成台阶把车头挡住
+  addStatic([9, 0.5, 6], { x: 6, y: 4.5 * Math.sin(0.27) - 0.25 * Math.cos(0.27) + 0.02, z: 0 }, tilt, 0x5a6b82);
+  // 落点：保龄球瓶阵 + 箱子墙
+  let pins = 0;
+  for (let row = 0; row < 4; row++) for (let k = 0; k <= row; k++) {
+    spawn('cyl', [0.32, 1.6], { x: -21 - row * 0.9, y: 0.801, z: (k - row / 2) * 0.95 }, { color: k % 2 ? '#f5f5f5' : '#e5484d', density: 1 });
+    pins++;
+  }
+  for (let r = 0; r < 5; r++) for (let c = 0; c < 7; c++) {
+    spawn('box', [1, 1, 1], { x: -33, y: 0.5 + r * 1.003 + 0.002, z: (c - 3) * 1.02 }, { color: state.palette[(r + c) % state.palette.length] });
+  }
+  enterDrive({ x: 30, y: 1.6, z: 0 }, 0);
+  toast(`特技坡道：按住 W 加速冲坡，撞倒 ${pins} 个球瓶和后面的箱子墙`, 4000);
 }
 
 function rain(n) {
@@ -745,9 +868,15 @@ addEventListener('pointermove', e => {
 addEventListener('pointerup', e => {
   if (!down) return;
   const click = !down.moved;
-  if (grab) { const { item, point } = grab; endGrab(); if (click) poke(item, point); }
-  else if (click) { setRay(e.clientX, e.clientY); shoot(ray.ray.direction.clone()); }
-  down = null; controls.enabled = true;
+  if (grab) {
+    const { item, point } = grab; endGrab();
+    if (click) state.clickMode === 'blast' ? explode(point) : poke(item, point);
+  } else if (click) {
+    setRay(e.clientX, e.clientY);
+    if (state.clickMode === 'blast') { if (ray.ray.intersectPlane(groundPlane, _p)) explode(_p.clone()); }
+    else shoot(ray.ray.direction.clone());
+  }
+  down = null; controls.enabled = !car;
 });
 
 controls.target.set(0, 2.5, 0);
@@ -756,15 +885,183 @@ controls.maxPolarAngle = Math.PI * 0.49;
 controls.minDistance = 6; controls.maxDistance = 90;
 controls.update();
 
+/* ---------------- 爆炸 ---------------- */
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const flash = new THREE.PointLight(0xffa040, 0, 40, 2); scene.add(flash);
+const fireball = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 12), new THREE.MeshBasicMaterial({
+  color: 0xffb060, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+fireball.visible = false; scene.add(fireball);
+let boomT = -1, boomBuf = null;
+function dynBodies() { const a = items.map(i => i.body); if (car) a.push(car.chassis); return a; }
+function explode(pt) {
+  const R = 9;
+  for (const b of dynBodies()) {
+    const dx = b.position.x - pt.x, dy = b.position.y - pt.y, dz = b.position.z - pt.z;
+    const d = Math.hypot(dx, dy, dz);
+    if (d > R) continue;
+    const f = 1 - d / R, inv = 1 / Math.max(d, 0.5), dv = 24 * f;
+    b.wakeUp();
+    b.applyImpulse(new CANNON.Vec3(dx * inv * dv * b.mass, (Math.max(dy, 0) * inv * dv + 7 * f) * b.mass, dz * inv * dv * b.mass), ZERO);
+  }
+  flash.position.set(pt.x, pt.y + 1, pt.z); fireball.position.copy(flash.position);
+  boomT = 0; fireball.visible = true;
+  emitSparks(flash.position, 90, 14);
+  if (state.audio && actx) {
+    const now = actx.currentTime;
+    if (!boomBuf) {
+      boomBuf = actx.createBuffer(1, actx.sampleRate * 1.2, actx.sampleRate);
+      const d = boomBuf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2);
+    }
+    const n = actx.createBufferSource(); n.buffer = boomBuf;
+    const f = actx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.setValueAtTime(900, now); f.frequency.exponentialRampToValueAtTime(80, now + 1);
+    const g = actx.createGain(); g.gain.setValueAtTime(0.9, now); g.gain.exponentialRampToValueAtTime(0.001, now + 1.1);
+    n.connect(f).connect(g).connect(master); n.start(now);
+  }
+}
+function updateBoom(dt) {
+  if (boomT < 0) return;
+  boomT += dt;
+  const k = boomT / 0.45;
+  flash.intensity = Math.max(0, 1 - k) * 900;
+  fireball.scale.setScalar(0.5 + k * 4.5); fireball.material.opacity = Math.max(0, 0.9 * (1 - k));
+  if (k >= 1) { boomT = -1; fireball.visible = false; flash.intensity = 0; }
+}
+
+/* ---------------- 车辆（RaycastVehicle 悬挂） ---------------- */
+let car = null;
+const CAR_LIFT = 0.35;
+const keys = new Set();
+const camLook = new THREE.Vector3();
+function buildCarMesh() {
+  const g = new THREE.Group();
+  const paint = new THREE.MeshStandardMaterial({ color: 0xe5484d, metalness: 0.6, roughness: 0.3 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1b1f27, metalness: 0.3, roughness: 0.4 });
+  const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; g.add(m); return m; };
+  add(new RoundedBoxGeometry(4, 0.8, 2, 3, 0.18), paint, 0, CAR_LIFT, 0);
+  add(new RoundedBoxGeometry(2.1, 0.75, 1.7, 3, 0.2), dark, 0.25, CAR_LIFT + 0.72, 0);
+  const lamp = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff2c0, emissiveIntensity: 2 });
+  add(new THREE.BoxGeometry(0.08, 0.2, 0.4), lamp, -2.0, CAR_LIFT + 0.05, 0.62);
+  add(new THREE.BoxGeometry(0.08, 0.2, 0.4), lamp, -2.0, CAR_LIFT + 0.05, -0.62);
+  const tail = new THREE.MeshStandardMaterial({ color: 0x550000, emissive: 0xff2020, emissiveIntensity: 1.5 });
+  add(new THREE.BoxGeometry(0.08, 0.18, 0.5), tail, 2.0, CAR_LIFT + 0.1, 0.6);
+  add(new THREE.BoxGeometry(0.08, 0.18, 0.5), tail, 2.0, CAR_LIFT + 0.1, -0.6);
+  const wheelGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.42, 24); wheelGeo.rotateX(Math.PI / 2);
+  const wheels = [0, 1, 2, 3].map(() => { const w = new THREE.Mesh(wheelGeo, dark); w.castShadow = true; scene.add(w); return w; });
+  scene.add(g);
+  return { body: g, wheels };
+}
+function enterDrive(pos, yaw) {
+  if (car) exitDrive();
+  if (!pos) {
+    const t = controls.target;
+    pos = { x: t.x + 14, y: 1.6, z: t.z + 14 };
+    yaw = Math.atan2(t.z - pos.z, -(t.x - pos.x)); // 车头（局部 -x）朝向视角中心
+  }
+  // 刚体原点（即质心）放在车身底部附近：驱动/制动力作用在轮胎接地点，力臂越短越不容易翘头、翻车
+  const chassis = new CANNON.Body({ mass: 150, angularDamping: 0.15 });
+  chassis.addShape(new CANNON.Box(new CANNON.Vec3(2, 0.45, 1)), new CANNON.Vec3(0, CAR_LIFT, 0));
+  chassis.inertia.scale(2.5, chassis.inertia);
+  chassis.invInertia.set(1 / chassis.inertia.x, 1 / chassis.inertia.y, 1 / chassis.inertia.z);
+  chassis.updateInertiaWorld(true);
+  chassis.position.set(pos.x, pos.y, pos.z);
+  chassis.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), yaw);
+  chassis.interpolatedPosition.copy(chassis.position); chassis.interpolatedQuaternion.copy(chassis.quaternion);
+  chassis.allowSleep = false;
+  chassis.__item = { type: 'box' };
+  chassis.addEventListener('collide', onCollide);
+  const vehicle = new CANNON.RaycastVehicle({ chassisBody: chassis });
+  for (const [x, z] of [[-1.3, 1], [-1.3, -1], [1.3, 1], [1.3, -1]]) {
+    vehicle.addWheel({
+      radius: 0.5, directionLocal: new CANNON.Vec3(0, -1, 0), axleLocal: new CANNON.Vec3(0, 0, 1),
+      chassisConnectionPointLocal: new CANNON.Vec3(x, CAR_LIFT, z),
+      suspensionStiffness: 30, suspensionRestLength: 0.35, frictionSlip: 2.2, dampingRelaxation: 2.3, dampingCompression: 4.4,
+      maxSuspensionForce: 1e5, rollInfluence: 0.02, maxSuspensionTravel: 0.35,
+      customSlidingRotationalSpeed: -30, useCustomSlidingRotationalSpeed: true,
+    });
+  }
+  vehicle.addToWorld(world);
+  car = { chassis, vehicle, mesh: buildCarMesh() };
+  controls.enabled = false;
+  camLook.set(pos.x, pos.y, pos.z);
+  $('drive-hud').classList.remove('hidden'); $('hint').classList.add('hidden');
+  setToggle('b-drive', true);
+  toast(matchMedia('(pointer: coarse)').matches ? '驾驶需要键盘（W/A/S/D）' : '驾驶模式：W/S 油门倒车，A/D 转向，空格手刹，C 下车');
+}
+function exitDrive() {
+  if (!car) return;
+  car.vehicle.removeFromWorld(world);
+  scene.remove(car.mesh.body); car.mesh.wheels.forEach(w => scene.remove(w));
+  car.mesh.body.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+  car.mesh.wheels[0].geometry.dispose();
+  const p = car.chassis.position;
+  controls.target.set(p.x, 1.5, p.z);
+  car = null; keys.clear();
+  controls.enabled = true; controls.update();
+  $('drive-hud').classList.add('hidden');
+  if (!$('left').classList.contains('hidden')) $('hint').classList.remove('hidden');
+  setToggle('b-drive', false);
+}
+function resetCar() {
+  if (!car) return;
+  const c = car.chassis, q = c.quaternion;
+  const yaw = Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.z * q.z));
+  c.position.y += 2; c.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), yaw);
+  c.velocity.set(0, 0, 0); c.angularVelocity.set(0, 0, 0);
+}
+const ENGINE = 1500, BRAKE = 18, TOP_SPEED = 42; // m/s
+function driveInput() {
+  if (!car) return;
+  const v = car.vehicle;
+  const fw = keys.has('w') || keys.has('arrowup'), bw = keys.has('s') || keys.has('arrowdown');
+  const left = keys.has('a') || keys.has('arrowleft'), right = keys.has('d') || keys.has('arrowright');
+  const fade = Math.max(0, 1 - car.chassis.velocity.length() / TOP_SPEED);
+  const force = fw ? -ENGINE * fade : bw ? ENGINE * 0.55 * fade : 0;
+  v.applyEngineForce(force, 2); v.applyEngineForce(force, 3);
+  const steer = left ? 0.5 : right ? -0.5 : 0;
+  v.setSteeringValue(steer, 0); v.setSteeringValue(steer, 1);
+  const brake = keys.has(' ') ? BRAKE : 0;
+  for (let i = 0; i < 4; i++) v.setBrake(brake, i);
+}
+const _wq = new THREE.Quaternion(), _wp = new THREE.Vector3(), _cq = new THREE.Quaternion(), _cp3 = new THREE.Vector3(), _fwd = new THREE.Vector3();
+const _cqInv = new CANNON.Quaternion(), _lp = new CANNON.Vec3(), _lq = new CANNON.Quaternion();
+function syncCar(dt) {
+  if (!car) return;
+  const c = car.chassis, ip = c.interpolatedPosition, iq = c.interpolatedQuaternion;
+  car.mesh.body.position.set(ip.x, ip.y, ip.z); car.mesh.body.quaternion.set(iq.x, iq.y, iq.z, iq.w);
+  // 轮子：先换算到车身局部，再套用插值后的车身姿态，慢动作时轮子不会和车身错位
+  c.quaternion.conjugate(_cqInv);
+  _cq.set(iq.x, iq.y, iq.z, iq.w);
+  for (let i = 0; i < 4; i++) {
+    car.vehicle.updateWheelTransform(i);
+    const t = car.vehicle.wheelInfos[i].worldTransform;
+    t.position.vsub(c.position, _lp); _cqInv.vmult(_lp, _lp);
+    _cqInv.mult(t.quaternion, _lq);
+    _wp.set(_lp.x, _lp.y, _lp.z).applyQuaternion(_cq).add(_cp3.set(ip.x, ip.y, ip.z));
+    _wq.set(_lq.x, _lq.y, _lq.z, _lq.w).premultiply(_cq);
+    car.mesh.wheels[i].position.copy(_wp); car.mesh.wheels[i].quaternion.copy(_wq);
+  }
+  // 追尾镜头：只跟随车头的水平朝向
+  _fwd.set(-1, 0, 0).applyQuaternion(_cq); _fwd.y = 0;
+  if (_fwd.lengthSq() < 1e-4) _fwd.set(-1, 0, 0);
+  _fwd.normalize();
+  _wp.set(ip.x, ip.y, ip.z).addScaledVector(_fwd, -10); _wp.y = ip.y + 4.5;
+  camera.position.lerp(_wp, 1 - Math.exp(-dt * 4));
+  camLook.lerp(_cp3.set(ip.x, ip.y + 1, ip.z).addScaledVector(_fwd, 4), 1 - Math.exp(-dt * 8));
+  camera.lookAt(camLook);
+  $('d-speed').textContent = (c.velocity.length() * 3.6).toFixed(0);
+  if (c.position.y < -30) { c.position.set(0, 3, 0); c.velocity.set(0, 0, 0); }
+}
+
 /* ---------------- 环境预设 ---------------- */
 const PRESETS = {
-  day: { bg: ['#8fc1ee', '#e9f1f8'], fog: 0xe9f1f8, ground: 0xe4e9ef, rough: 0.92, hemi: [0xffffff, 0x8a9bb0, 0.8], sun: [0xffffff, 2.8], env: 0.7, neon: 0, grid: [0x7d8fa5, 0xb9c5d3], stars: false, elev: 55, azim: 35, sparks: 0xffb347,
+  day: { bloom: [0.35, 0.92, 0.4], glow: 0, bg: ['#8fc1ee', '#e9f1f8'], fog: 0xe9f1f8, ground: 0xe4e9ef, rough: 0.92, hemi: [0xffffff, 0x8a9bb0, 0.8], sun: [0xffffff, 2.8], env: 0.7, neon: 0, grid: [0x7d8fa5, 0xb9c5d3], stars: false, elev: 55, azim: 35, sparks: 0xffb347,
     palette: ['#4f8ef7', '#f2c14e', '#ef6f6c', '#43c59e', '#9b7bf7', '#5fd1e8'] },
-  sunset: { bg: ['#2f2552', '#ffae78'], fog: 0xeea07c, ground: 0xd7b39c, rough: 0.85, hemi: [0xffd2b0, 0x5a3b4a, 0.6], sun: [0xff9550, 3.4], env: 0.5, neon: 0, grid: [0x8a5a50, 0xb88a78], stars: false, elev: 11, azim: 250, sparks: 0xffd27a,
+  sunset: { bloom: [0.5, 0.85, 0.5], glow: 0, bg: ['#2f2552', '#ffae78'], fog: 0xeea07c, ground: 0xd7b39c, rough: 0.85, hemi: [0xffd2b0, 0x5a3b4a, 0.6], sun: [0xff9550, 3.4], env: 0.5, neon: 0, grid: [0x8a5a50, 0xb88a78], stars: false, elev: 11, azim: 250, sparks: 0xffd27a,
     palette: ['#ff8a5b', '#ffd166', '#ef476f', '#8e7dbe', '#f4a261', '#2a9d8f'] },
-  neon: { bg: ['#04050d', '#1c0b36'], fog: 0x0a0717, ground: 0x0c0e19, rough: 0.3, hemi: [0x4050ff, 0x080810, 0.3], sun: [0x8899ff, 0.7], env: 0.35, neon: 900, grid: [0xff3df0, 0x2ef2ff], stars: false, elev: 62, azim: 120, sparks: 0x7ff6ff,
+  neon: { bloom: [0.85, 0.6, 0.5], glow: 0.18, bg: ['#04050d', '#1c0b36'], fog: 0x0a0717, ground: 0x0c0e19, rough: 0.3, hemi: [0x4050ff, 0x080810, 0.3], sun: [0x8899ff, 0.7], env: 0.35, neon: 900, grid: [0xff3df0, 0x2ef2ff], stars: false, elev: 62, azim: 120, sparks: 0x7ff6ff,
     palette: ['#ff3df0', '#2ef2ff', '#b4ff39', '#ffe23d', '#7a5cff', '#ff6b3d'] },
-  space: { bg: ['#000000', '#05070d'], fog: null, ground: 0x1b1e26, rough: 0.95, hemi: [0x8090b0, 0x000000, 0.15], sun: [0xffffff, 3.6], env: 0.25, neon: 0, grid: [0x3a4558, 0x252c38], stars: true, elev: 22, azim: 300, sparks: 0xffffff,
+  space: { bloom: [0.7, 0.7, 0.5], glow: 0, bg: ['#000000', '#05070d'], fog: null, ground: 0x1b1e26, rough: 0.95, hemi: [0x8090b0, 0x000000, 0.15], sun: [0xffffff, 3.6], env: 0.25, neon: 0, grid: [0x3a4558, 0x252c38], stars: true, elev: 22, azim: 300, sparks: 0xffffff,
     palette: ['#d9dde4', '#9fb4d6', '#e7c27a', '#c9a0dc', '#7fd1c7', '#f08a7e'] },
 };
 function applyPreset(name) {
@@ -780,6 +1077,8 @@ function applyPreset(name) {
   neonA.intensity = neonB.intensity = P.neon;
   sparkPts.material.color.set(P.sparks);
   stars.visible = P.stars;
+  bloomPass.strength = P.bloom[0]; bloomPass.threshold = P.bloom[1]; bloomPass.radius = P.bloom[2];
+  for (const m of Object.values(mats)) m.emissiveIntensity = P.glow;
   makeGrid(P.grid[0], P.grid[1]);
   $('r-elev').value = P.elev; $('r-azim').value = P.azim; updateSun();
   document.querySelectorAll('[data-preset]').forEach(b => b.classList.toggle('on', b.dataset.preset === name));
@@ -813,7 +1112,18 @@ const actions = {
   pause() { state.paused = !state.paused; $('b-pause').textContent = state.paused ? '▶ 继续' : '⏸ 暂停'; setToggle('b-pause', state.paused); },
   panels() { const hide = !$('left').classList.contains('hidden'); ['left', 'right', 'hint'].forEach(id => $(id).classList.toggle('hidden', hide)); $('b-panels').textContent = hide ? '显示面板' : '隐藏面板'; },
   clear() { clearScene(); toast('场景已清空'); },
+  drive() { car ? exitDrive() : enterDrive(); },
+  bullet() { state.bulletTime = !state.bulletTime; setToggle('b-bullet', state.bulletTime); toast(state.bulletTime ? '子弹时间：0.15×' : '子弹时间：关'); },
+  mode(m) {
+    state.clickMode = m || (state.clickMode === 'shoot' ? 'blast' : 'shoot');
+    document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === state.clickMode));
+    toast(state.clickMode === 'blast' ? '点击模式：引爆炸弹（点地面或物体）' : '点击模式：发射钢球');
+  },
 };
+$('b-drive').onclick = actions.drive;
+$('b-bullet').onclick = actions.bullet;
+$('b-bloom').onclick = () => { state.bloom = !state.bloom; setToggle('b-bloom', state.bloom); };
+document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => actions.mode(b.dataset.mode));
 $('b-zerog').onclick = actions.zeroG;
 $('b-hole').onclick = actions.hole;
 $('b-pause').onclick = actions.pause;
@@ -833,14 +1143,21 @@ $('b-audio').onclick = async () => {
 document.querySelectorAll('[data-preset]').forEach(b => b.onclick = () => applyPreset(b.dataset.preset));
 document.querySelectorAll('[data-spawn]').forEach(b => b.onclick = () => randomBody(b.dataset.spawn, { x: rand(-3, 3), y: rand(10, 14), z: rand(-3, 3) }));
 document.querySelectorAll('[data-rain]').forEach(b => b.onclick = () => rain(+b.dataset.rain));
-const builders = { tower: buildTower, dominoes: buildDominoes, cradle: buildCradle, pyramid: buildPyramid };
+const builders = { tower: buildTower, dominoes: buildDominoes, cradle: buildCradle, pyramid: buildPyramid, wreck: buildWreck, ramp: buildRamp };
 document.querySelectorAll('[data-build]').forEach(b => b.onclick = () => { if ($('c-clear').checked) clearScene(); builders[b.dataset.build](); });
 $('cap-note').textContent = `上限 ${MAX_BODIES}，超出淘汰最早的`;
 
+addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
+addEventListener('blur', () => keys.clear());
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' && e.target.type !== 'range') return;
   const k = e.key.toLowerCase();
-  if (k === ' ') { e.preventDefault(); ray.setFromCamera(new THREE.Vector2(0, 0), camera); shoot(ray.ray.direction.clone()); }
+  if (car && ['w', 'a', 's', 'd', ' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) { e.preventDefault(); keys.add(k); return; }
+  if (car && k === 'r') { resetCar(); return; }
+  if (k === 'c') actions.drive();
+  else if (k === 't') actions.bullet();
+  else if (k === 'x') actions.mode();
+  else if (k === ' ') { e.preventDefault(); ray.setFromCamera(new THREE.Vector2(0, 0), camera); shoot(ray.ray.direction.clone()); }
   else if (k === 'g') actions.zeroG();
   else if (k === 'b') actions.hole();
   else if (k === 'f') shockwave();
@@ -986,7 +1303,7 @@ function telemetry(dt, physMs, rendMs) {
   $('s-calls').textContent = renderer.info.render.calls;
   $('s-tris').textContent = renderer.info.render.triangles.toLocaleString();
   $('s-g').textContent = (state.zeroG ? 0 : state.gravity).toFixed(1);
-  $('s-ts').textContent = state.timeScale.toFixed(2) + '×';
+  $('s-ts').textContent = effectiveTimeScale().toFixed(2) + '×';
   $('s-bh').textContent = state.blackHole ? '开' : '关';
   $('s-run').textContent = state.paused ? '暂停' : bench ? '压测中' : '运行';
   drawSpark($('g-fps'), hist.fps, '#4ade80', 60);
@@ -1006,8 +1323,10 @@ const clock = new THREE.Clock();
 function frame() {
   requestAnimationFrame(frame);
   const dt = Math.min(clock.getDelta(), 0.1);
+  const ts = effectiveTimeScale();
+  driveInput();
   const t0 = performance.now();
-  if (!state.paused) world.step(FIXED_DT, dt * state.timeScale, 6);
+  if (!state.paused) world.step(FIXED_DT, dt * ts, 6);
   const physMs = performance.now() - t0;
 
   for (let i = items.length - 1; i >= 0; i--) {
@@ -1016,13 +1335,15 @@ function frame() {
   }
   for (const p of poolList) p.sync();
   updateRigs();
-  updateSparks(state.paused ? 0 : dt * state.timeScale);
+  updateSparks(state.paused ? 0 : dt * ts);
   updateBlast(dt);
+  updateBoom(state.paused ? 0 : dt * Math.max(ts, 0.3));
   if (bh.visible) { ring1.rotation.z += dt * 1.8; ring2.rotation.z -= dt * 1.1; }
-  controls.update();
+  if (car) syncCar(dt); else controls.update();
 
   const t1 = performance.now();
-  renderer.render(scene, camera);
+  renderer.info.reset();
+  if (state.bloom) composer.render(); else renderer.render(scene, camera);
   const rendMs = performance.now() - t1;
   telemetry(dt, physMs, rendMs);
   stepBench(dt, lastFps, lastPhys);
@@ -1031,6 +1352,7 @@ function frame() {
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
 });
 
 // 支持分享链接：?preset=neon&scene=dominoes
@@ -1044,7 +1366,8 @@ else {
 }
 window.__booted = true;
 $('boot').remove();
-window.sandbox = { world, items, spawn, rain, clearScene, buildTower, buildDominoes, buildCradle, buildPyramid, shockwave, snapshot, restore, renderer, scene, camera, pools, state, actions };
+window.sandbox = { world, items, spawn, rain, clearScene, builders, shockwave, explode, snapshot, restore, renderer, scene, camera, pools, state, actions, keys,
+  enterDrive, exitDrive, getCar: () => car, composer };
 frame();
 </script>
 </body>
