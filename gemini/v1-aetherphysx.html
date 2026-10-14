@@ -1,0 +1,1636 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AetherPhysX 3D - 物理碰撞与动态光影实验室</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --accent: #06b6d4;
+            --accent-glow: rgba(6, 182, 212, 0.45);
+        }
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #050811;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: #f1f5f9;
+        }
+        .font-mono-tech {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        #canvas-container {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        /* Glassmorphism Panels */
+        .glass-panel {
+            background: rgba(10, 15, 29, 0.72);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.11);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        }
+        .glass-button {
+            background: rgba(30, 41, 59, 0.65);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .glass-button:hover {
+            background: rgba(51, 65, 85, 0.85);
+            border-color: rgba(6, 182, 212, 0.6);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(6, 182, 212, 0.25);
+        }
+        .glass-button:active {
+            transform: translateY(1px);
+        }
+        .glass-button.active-preset {
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.35), rgba(59, 130, 246, 0.35));
+            border-color: #22d3ee;
+            box-shadow: 0 0 18px rgba(6, 182, 212, 0.35);
+            color: #fff;
+        }
+        /* Custom Range Sliders */
+        input[type=range] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 6px;
+            cursor: pointer;
+            background: rgba(51, 65, 85, 0.9);
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        input[type=range]::-webkit-slider-thumb {
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #22d3ee;
+            cursor: pointer;
+            -webkit-appearance: none;
+            margin-top: -6px;
+            box-shadow: 0 0 10px rgba(34, 211, 238, 0.8);
+            border: 2px solid #ffffff;
+            transition: transform 0.15s ease;
+        }
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.4);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(100, 116, 139, 0.5);
+            border-radius: 999px;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.92); opacity: 0.8; }
+            50% { transform: scale(1.06); opacity: 0.35; }
+            100% { transform: scale(0.92); opacity: 0.8; }
+        }
+        .reticle-pulse {
+            animation: pulse-ring 4s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="relative select-none">
+
+    <!-- 3D Viewport Container -->
+    <div id="canvas-container"></div>
+
+    <!-- Center Subtle SVG HUD Reticle (Non-blocking) -->
+    <div id="center-reticle" class="pointer-events-none fixed inset-0 flex items-center justify-center z-10 opacity-35 transition-opacity duration-300">
+        <svg width="260" height="260" viewBox="0 0 260 260" class="reticle-pulse">
+            <circle cx="130" cy="130" r="95" fill="none" stroke="rgba(34, 211, 238, 0.22)" stroke-width="1" stroke-dasharray="6 8" />
+            <circle cx="130" cy="130" r="115" fill="none" stroke="rgba(148, 163, 184, 0.15)" stroke-width="1" />
+            <path d="M 130 20 L 130 35 M 130 225 L 130 240 M 20 130 L 35 130 M 225 130 L 240 130" stroke="rgba(34, 211, 238, 0.4)" stroke-width="1.5" />
+            <circle cx="130" cy="130" r="2.5" fill="rgba(34, 211, 238, 0.7)" />
+            <!-- Corner Brackets -->
+            <path d="M 55 75 L 55 55 L 75 55" fill="none" stroke="rgba(34, 211, 238, 0.45)" stroke-width="1.5" />
+            <path d="M 205 75 L 205 55 L 185 55" fill="none" stroke="rgba(34, 211, 238, 0.45)" stroke-width="1.5" />
+            <path d="M 55 185 L 55 205 L 75 205" fill="none" stroke="rgba(34, 211, 238, 0.45)" stroke-width="1.5" />
+            <path d="M 205 185 L 205 205 L 185 205" fill="none" stroke="rgba(34, 211, 238, 0.45)" stroke-width="1.5" />
+        </svg>
+    </div>
+
+    <!-- Top Navigation & Status Bar -->
+    <header class="fixed top-3 left-3 right-3 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+        <div class="glass-panel px-4 py-2.5 rounded-2xl flex items-center gap-3 pointer-events-auto">
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/30">
+                <svg class="w-5 h-5 text-slate-950" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                </svg>
+            </div>
+            <div>
+                <div class="flex items-center gap-2">
+                    <h1 class="text-sm md:text-base font-bold tracking-wider bg-gradient-to-r from-white via-cyan-200 to-blue-300 bg-clip-text text-transparent">AETHER·PHYSX 3D</h1>
+                    <span class="text-[10px] font-mono-tech uppercase px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">v4.0 Engine</span>
+                </div>
+                <p class="text-[11px] text-slate-400 hidden sm:block">刚体动力学碰撞 · 实时 PBR 光影追踪与遥测沙盒</p>
+            </div>
+        </div>
+
+        <!-- Interactive Mode & Audio Quick Bar -->
+        <div class="glass-panel px-3 py-2 rounded-2xl flex items-center gap-2 pointer-events-auto">
+            <!-- Left Click Mode Switch -->
+            <div class="flex items-center bg-slate-900/80 p-1 rounded-xl border border-slate-700/60">
+                <button id="mode-shoot-btn" onclick="setClickMode('shoot')" class="px-2.5 py-1 rounded-lg text-xs font-medium transition-all bg-cyan-500 text-slate-950 shadow-sm flex items-center gap-1.5">
+                    <span>🎯</span> 动能发射
+                </button>
+                <button id="mode-impulse-btn" onclick="setClickMode('impulse')" class="px-2.5 py-1 rounded-lg text-xs font-medium transition-all text-slate-300 hover:text-white flex items-center gap-1.5">
+                    <span>⚡</span> 脉冲推力
+                </button>
+            </div>
+
+            <div class="h-5 w-[1px] bg-slate-700/70 mx-0.5"></div>
+
+            <!-- Sound Effects Toggle -->
+            <button id="sound-toggle-btn" onclick="toggleAudio()" class="glass-button px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 text-slate-300" title="碰撞合成音效开关">
+                <span id="sound-icon">🔇</span>
+                <span class="hidden md:inline" id="sound-label">音效: 关</span>
+            </button>
+
+            <!-- Toggle UI Visibility for Clean View -->
+            <button onclick="togglePanels()" class="glass-button px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 text-cyan-300" title="隐藏/显示控制面板">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"/></svg>
+                <span class="hidden sm:inline" id="hud-toggle-label">收起面板</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Left Floating Panel: Lighting, Physics & Spawners -->
+    <aside id="left-panel" class="fixed top-20 left-3 bottom-14 w-80 max-w-[calc(100vw-24px)] z-20 glass-panel rounded-2xl p-4 flex flex-col gap-4 overflow-y-auto transition-transform duration-300">
+        
+        <!-- Section 1: 4 Lighting & Environment Modes -->
+        <div>
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-semibold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                    光影环境预设 (LIGHTING MODES)
+                </span>
+                <span id="current-env-badge" class="text-[10px] font-mono-tech text-slate-400">STUDIO</span>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+                <button id="env-daylight" onclick="setEnvironmentMode('daylight')" class="glass-button active-preset px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2 text-left">
+                    <span class="text-base">☀️</span>
+                    <div>
+                        <div class="font-semibold leading-tight">白昼工作室</div>
+                        <div class="text-[10px] text-slate-400">Daylight Studio</div>
+                    </div>
+                </button>
+                <button id="env-cyberpunk" onclick="setEnvironmentMode('cyberpunk')" class="glass-button px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2 text-left">
+                    <span class="text-base">🟣</span>
+                    <div>
+                        <div class="font-semibold leading-tight">赛博霓虹</div>
+                        <div class="text-[10px] text-slate-400">Cyber Neon</div>
+                    </div>
+                </button>
+                <button id="env-sunset" onclick="setEnvironmentMode('sunset')" class="glass-button px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2 text-left">
+                    <span class="text-base">🌅</span>
+                    <div>
+                        <div class="font-semibold leading-tight">黄昏落日</div>
+                        <div class="text-[10px] text-slate-400">Golden Sunset</div>
+                    </div>
+                </button>
+                <button id="env-space" onclick="setEnvironmentMode('space')" class="glass-button px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2 text-left">
+                    <span class="text-base">🌌</span>
+                    <div>
+                        <div class="font-semibold leading-tight">极夜星辰</div>
+                        <div class="text-[10px] text-slate-400">Deep Space</div>
+                    </div>
+                </button>
+            </div>
+
+            <!-- Sun Elevation & Azimuth Sliders -->
+            <div class="mt-3 space-y-2.5 bg-slate-900/55 p-2.5 rounded-xl border border-slate-800/80">
+                <div>
+                    <div class="flex justify-between text-xs mb-1">
+                        <span class="text-slate-300">太阳高度角 (Sun Elevation)</span>
+                        <span id="val-sun-el" class="font-mono-tech text-cyan-300">48°</span>
+                    </div>
+                    <input id="slider-sun-el" type="range" min="5" max="88" value="48" oninput="updateSunAngles()">
+                </div>
+                <div>
+                    <div class="flex justify-between text-xs mb-1">
+                        <span class="text-slate-300">太阳方位角 (Sun Azimuth)</span>
+                        <span id="val-sun-az" class="font-mono-tech text-cyan-300">35°</span>
+                    </div>
+                    <input id="slider-sun-az" type="range" min="0" max="360" value="35" oninput="updateSunAngles()">
+                </div>
+                <div class="flex items-center justify-between pt-1 gap-2">
+                    <button id="btn-wireframe" onclick="toggleWireframe()" class="flex-1 glass-button py-1.5 rounded-lg text-[11px] text-slate-300 flex items-center justify-center gap-1">
+                        <span>🕸️</span> 网格线框: 关
+                    </button>
+                    <button id="btn-grid" onclick="toggleFloorGrid()" class="flex-1 glass-button py-1.5 rounded-lg text-[11px] text-cyan-300 flex items-center justify-center gap-1">
+                        <span>📏</span> 地面标尺: 开
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <hr class="border-slate-800">
+
+        <!-- Section 2: Physics Parameters -->
+        <div>
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-semibold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    物理引擎参数 (PHYSICS PARAMS)
+                </span>
+                <button onclick="setZeroGravity()" class="text-[10px] font-mono-tech px-2 py-0.5 rounded bg-indigo-500/25 hover:bg-indigo-500/40 text-indigo-300 border border-indigo-400/30 transition">
+                    一键零重力 (0G)
+                </button>
+            </div>
+
+            <div class="space-y-2.5 bg-slate-900/55 p-2.5 rounded-xl border border-slate-800/80">
+                <!-- Gravity Y -->
+                <div>
+                    <div class="flex justify-between text-xs mb-1">
+                        <span class="text-slate-300">重力加速度 (Gravity Y)</span>
+                        <span id="val-gravity" class="font-mono-tech text-cyan-300">-9.8 m/s²</span>
+                    </div>
+                    <input id="slider-gravity" type="range" min="-20" max="5" step="0.2" value="-9.8" oninput="updatePhysicsParams()">
+                </div>
+
+                <!-- Restitution (Bounciness) -->
+                <div>
+                    <div class="flex justify-between text-xs mb-1">
+                        <span class="text-slate-300">弹性恢复系数 (Restitution)</span>
+                        <span id="val-restitution" class="font-mono-tech text-cyan-300">0.65</span>
+                    </div>
+                    <input id="slider-restitution" type="range" min="0.0" max="1.15" step="0.05" value="0.65" oninput="updatePhysicsParams()">
+                </div>
+
+                <!-- Friction -->
+                <div>
+                    <div class="flex justify-between text-xs mb-1">
+                        <span class="text-slate-300">表面摩擦系数 (Friction)</span>
+                        <span id="val-friction" class="font-mono-tech text-cyan-300">0.30</span>
+                    </div>
+                    <input id="slider-friction" type="range" min="0.0" max="1.0" step="0.05" value="0.30" oninput="updatePhysicsParams()">
+                </div>
+
+                <!-- Time Scale (Bullet Time) -->
+                <div>
+                    <div class="flex justify-between text-xs mb-1">
+                        <span class="text-slate-300">时间流速/子弹时间 (Time Scale)</span>
+                        <span id="val-timescale" class="font-mono-tech text-amber-300">1.0x</span>
+                    </div>
+                    <input id="slider-timescale" type="range" min="0.1" max="2.0" step="0.05" value="1.0" oninput="updatePhysicsParams()">
+                </div>
+            </div>
+        </div>
+
+        <hr class="border-slate-800">
+
+        <!-- Section 3: Spawners & Special Force Fields -->
+        <div>
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-semibold uppercase tracking-wider text-cyan-400">生成几何体与力场 (SPAWN & FORCES)</span>
+            </div>
+
+            <!-- Individual Primitives -->
+            <div class="grid grid-cols-3 gap-1.5 mb-2">
+                <button onclick="spawnPrimitive('sphere')" class="glass-button py-2 px-2 rounded-xl text-xs font-medium flex flex-col items-center gap-1">
+                    <span class="text-base">🔮</span>
+                    <span>金属球体</span>
+                </button>
+                <button onclick="spawnPrimitive('box')" class="glass-button py-2 px-2 rounded-xl text-xs font-medium flex flex-col items-center gap-1">
+                    <span class="text-base">🧊</span>
+                    <span>能量立方</span>
+                </button>
+                <button onclick="spawnPrimitive('poly')" class="glass-button py-2 px-2 rounded-xl text-xs font-medium flex flex-col items-center gap-1">
+                    <span class="text-base">💎</span>
+                    <span>多面棱柱</span>
+                </button>
+            </div>
+
+            <!-- Macro Structures & Presets -->
+            <div class="grid grid-cols-2 gap-2 mb-2.5">
+                <button onclick="buildJengaTower()" class="glass-button py-2 px-2.5 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 text-amber-200 border-amber-500/30">
+                    <span>🏛️</span> 生成复合高塔
+                </button>
+                <button onclick="buildPendulumChain()" class="glass-button py-2 px-2.5 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 text-emerald-200 border-emerald-500/30">
+                    <span>⛓️</span> 悬链摆球测试
+                </button>
+                <button onclick="spawnStarRain(30)" class="glass-button py-2 px-2.5 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 text-sky-200">
+                    <span>☄️</span> 漫天星雨 (×30)
+                </button>
+                <button onclick="shootKineticProjectile()" class="glass-button py-2 px-2.5 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 text-rose-200">
+                    <span>🚀</span> 发射重型榴弹
+                </button>
+            </div>
+
+            <!-- Force Field Triggers -->
+            <div class="space-y-2">
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="btn-vortex" onclick="toggleBlackHoleVortex()" class="glass-button py-2.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 text-fuchsia-300 border-fuchsia-500/40">
+                        <span class="text-sm">🌀</span>
+                        <span id="vortex-label">黑洞引力涡流: 关</span>
+                    </button>
+                    <button onclick="triggerShockwaveBlast()" class="glass-button py-2.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 text-orange-300 border-orange-500/40 bg-orange-500/10 hover:bg-orange-500/25">
+                        <span class="text-sm">💥</span>
+                        <span>径向冲击波爆破</span>
+                    </button>
+                </div>
+                <button onclick="resetScene()" class="w-full glass-button py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-rose-300 flex items-center justify-center gap-1.5">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                    清空场景并重置 (RESET SANDBOX)
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Right Floating Panel: Real-time SVG Telemetry Dashboard -->
+    <aside id="right-panel" class="fixed top-20 right-3 w-80 max-w-[calc(100vw-24px)] z-20 glass-panel rounded-2xl p-4 flex flex-col gap-3.5 transition-transform duration-300 hidden lg:flex">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+            <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                <span class="text-xs font-semibold uppercase tracking-wider text-cyan-400">实时遥测监控 (SVG TELEMETRY)</span>
+            </div>
+            <span id="telemetry-status" class="text-[10px] font-mono-tech text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/30">ACTIVE</span>
+        </div>
+
+        <!-- Circular SVG Gauges: FPS & Rigid Bodies -->
+        <div class="grid grid-cols-2 gap-2.5">
+            <!-- FPS Gauge -->
+            <div class="bg-slate-900/60 border border-slate-800/90 rounded-xl p-2.5 flex items-center gap-2.5">
+                <svg class="w-12 h-12 shrink-0 -rotate-90" viewBox="0 0 48 48">
+                    <circle cx="24" cy="24" r="19" fill="none" stroke="rgba(51, 65, 85, 0.7)" stroke-width="4"/>
+                    <circle id="gauge-fps-circle" cx="24" cy="24" r="19" fill="none" stroke="#22d3ee" stroke-width="4" stroke-linecap="round" stroke-dasharray="119.38" stroke-dashoffset="15"/>
+                </svg>
+                <div>
+                    <div class="text-[10px] font-mono-tech text-slate-400">RENDER FPS</div>
+                    <div id="telemetry-fps" class="text-lg font-bold font-mono-tech text-white leading-tight">60</div>
+                    <div class="text-[10px] text-cyan-400">帧率稳定</div>
+                </div>
+            </div>
+
+            <!-- Active Bodies Gauge -->
+            <div class="bg-slate-900/60 border border-slate-800/90 rounded-xl p-2.5 flex items-center gap-2.5">
+                <svg class="w-12 h-12 shrink-0 -rotate-90" viewBox="0 0 48 48">
+                    <circle cx="24" cy="24" r="19" fill="none" stroke="rgba(51, 65, 85, 0.7)" stroke-width="4"/>
+                    <circle id="gauge-bodies-circle" cx="24" cy="24" r="19" fill="none" stroke="#a855f7" stroke-width="4" stroke-linecap="round" stroke-dasharray="119.38" stroke-dashoffset="90"/>
+                </svg>
+                <div>
+                    <div class="text-[10px] font-mono-tech text-slate-400">RIGID BODIES</div>
+                    <div id="telemetry-bodies" class="text-lg font-bold font-mono-tech text-white leading-tight">0</div>
+                    <div class="text-[10px] text-purple-400">刚体对象数</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live SVG Waveform: System Kinetic Energy -->
+        <div class="bg-slate-900/60 border border-slate-800/90 rounded-xl p-3">
+            <div class="flex items-center justify-between mb-1.5">
+                <span class="text-[11px] font-medium text-slate-300">系统总动能 (Total Kinetic Energy)</span>
+                <span id="telemetry-ke" class="text-xs font-mono-tech font-semibold text-cyan-300">0.0 J</span>
+            </div>
+            <svg class="w-full h-20 bg-slate-950/70 rounded-lg border border-slate-800/70 overflow-hidden" viewBox="0 0 260 72" preserveAspectRatio="none">
+                <defs>
+                    <linearGradient id="ke-grad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.55"/>
+                        <stop offset="100%" stop-color="#06b6d4" stop-opacity="0.0"/>
+                    </linearGradient>
+                </defs>
+                <!-- Grid Lines -->
+                <line x1="0" y1="18" x2="260" y2="18" stroke="rgba(148,163,184,0.1)" stroke-dasharray="3 3" stroke-width="1"/>
+                <line x1="0" y1="36" x2="260" y2="36" stroke="rgba(148,163,184,0.1)" stroke-dasharray="3 3" stroke-width="1"/>
+                <line x1="0" y1="54" x2="260" y2="54" stroke="rgba(148,163,184,0.1)" stroke-dasharray="3 3" stroke-width="1"/>
+                <!-- Area & Waveform Polyline -->
+                <polygon id="svg-ke-area" points="0,72 260,72" fill="url(#ke-grad)" />
+                <polyline id="svg-ke-line" points="0,70 260,70" fill="none" stroke="#22d3ee" stroke-width="2" stroke-linejoin="round" />
+            </svg>
+        </div>
+
+        <!-- Live SVG Bar/Spark Chart: Collision Impact Energy & Frequency -->
+        <div class="bg-slate-900/60 border border-slate-800/90 rounded-xl p-3">
+            <div class="flex items-center justify-between mb-1.5">
+                <span class="text-[11px] font-medium text-slate-300">碰撞冲击频谱 (Impact Impulse / s)</span>
+                <span id="telemetry-impacts" class="text-xs font-mono-tech font-semibold text-amber-400">0 Hz</span>
+            </div>
+            <svg class="w-full h-16 bg-slate-950/70 rounded-lg border border-slate-800/70 overflow-hidden" viewBox="0 0 260 56" preserveAspectRatio="none">
+                <polyline id="svg-impact-line" points="0,54 260,54" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linejoin="round" />
+            </svg>
+            <div class="flex justify-between items-center mt-1.5 text-[10px] font-mono-tech text-slate-400">
+                <span>峰值冲击: <strong id="telemetry-peak-impact" class="text-amber-300">0.0 N·s</strong></span>
+                <span>火花粒子: <strong id="telemetry-sparks" class="text-cyan-300">0</strong></span>
+            </div>
+        </div>
+
+        <!-- SVG Radar & Vector Indicator (Gravity Vector + Camera Orbit) -->
+        <div class="bg-slate-900/60 border border-slate-800/90 rounded-xl p-3 flex items-center justify-between gap-3">
+            <div class="relative w-20 h-20 shrink-0">
+                <svg class="w-full h-full" viewBox="0 0 80 80">
+                    <circle cx="40" cy="40" r="34" fill="rgba(2, 6, 23, 0.8)" stroke="rgba(56, 189, 248, 0.3)" stroke-width="1.5"/>
+                    <circle cx="40" cy="40" r="22" fill="none" stroke="rgba(148, 163, 184, 0.18)" stroke-width="1" stroke-dasharray="2 2"/>
+                    <line x1="6" y1="40" x2="74" y2="40" stroke="rgba(148, 163, 184, 0.2)" stroke-width="1"/>
+                    <line x1="40" y1="6" x2="40" y2="74" stroke="rgba(148, 163, 184, 0.2)" stroke-width="1"/>
+                    <!-- Camera Azimuth Dot -->
+                    <circle id="radar-cam-dot" cx="40" cy="12" r="4" fill="#38bdf8" />
+                    <!-- Gravity Direction Arrow -->
+                    <line id="radar-grav-line" x1="40" y1="40" x2="40" y2="66" stroke="#f43f5e" stroke-width="2.5" stroke-linecap="round"/>
+                    <circle cx="40" cy="40" r="3" fill="#e2e8f0"/>
+                </svg>
+            </div>
+            <div class="flex-1 space-y-1 text-[11px] font-mono-tech">
+                <div class="flex justify-between">
+                    <span class="text-slate-400">CAM ORBIT:</span>
+                    <span id="telemetry-cam-orbit" class="text-sky-300">45° / 32°</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-slate-400">CAM DIST:</span>
+                    <span id="telemetry-cam-dist" class="text-sky-300">28.0 m</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-slate-400">GRAVITY VEC:</span>
+                    <span id="telemetry-grav-vec" class="text-rose-400">[0, -9.8, 0]</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-slate-400">VORTEX FIELD:</span>
+                    <span id="telemetry-vortex-state" class="text-slate-400">STANDBY</span>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Bottom Interactive Guide Pill -->
+    <footer class="fixed bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none w-max max-w-[95vw]">
+        <div class="glass-panel px-4 py-2 rounded-full flex items-center gap-4 text-xs text-slate-300 pointer-events-auto shadow-xl">
+            <span class="flex items-center gap-1.5">
+                <kbd class="px-1.5 py-0.5 text-[10px] font-mono-tech bg-slate-800 text-cyan-300 rounded border border-slate-700">左键单击</kbd>
+                <span id="footer-click-hint">朝鼠标方向发射高速动能球</span>
+            </span>
+            <span class="hidden sm:inline text-slate-600">|</span>
+            <span class="hidden sm:flex items-center gap-1.5">
+                <kbd class="px-1.5 py-0.5 text-[10px] font-mono-tech bg-slate-800 text-cyan-300 rounded border border-slate-700">左键拖拽</kbd>
+                <span>360° 环绕相机视角</span>
+            </span>
+            <span class="hidden md:inline text-slate-600">|</span>
+            <span class="hidden md:flex items-center gap-1.5">
+                <kbd class="px-1.5 py-0.5 text-[10px] font-mono-tech bg-slate-800 text-cyan-300 rounded border border-slate-700">滚轮 / 双指</kbd>
+                <span>缩放视距</span>
+            </span>
+        </div>
+    </footer>
+
+    <!-- Toast Notification Banner (No alert() used) -->
+    <div id="toast-banner" class="fixed top-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none opacity-0 transition-all duration-300 transform -translate-y-2">
+        <div class="glass-panel px-4 py-2 rounded-xl border-cyan-400/50 text-xs font-medium text-cyan-200 flex items-center gap-2 shadow-lg">
+            <span id="toast-icon">✨</span>
+            <span id="toast-text">系统就绪</span>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================================
+        // 1. GLOBAL STATE & CONFIGURATION
+        // ============================================================================
+        let scene, camera, renderer;
+        let world; // Cannon.js physics world
+        let physMaterial; // Shared physics material
+        let contactMaterial;
+
+        // Rigid body & mesh pairs: { mesh, body, type, mass, baseColor }
+        const rigidObjects = [];
+        // Constraints (for pendulum chains)
+        const activeConstraints = [];
+        // 3D Spark Particle Bursts
+        const sparkSystems = [];
+        let activeSparkCount = 0;
+
+        // Lighting & Environment Objects
+        let ambientLight, hemiLight, sunLight;
+        let neonLight1, neonLight2;
+        let floorMesh, gridHelper, starfieldPoints, vortexCoreMesh;
+
+        // Environment & Physics State
+        const state = {
+            envMode: 'daylight',
+            sunElevation: 48,
+            sunAzimuth: 35,
+            wireframe: false,
+            showGrid: true,
+            gravityY: -9.8,
+            restitution: 0.65,
+            friction: 0.30,
+            timeScale: 1.0,
+            vortexActive: false,
+            clickMode: 'shoot', // 'shoot' or 'impulse'
+            audioEnabled: false,
+            panelsVisible: true
+        };
+
+        // Camera Orbit Controls State
+        const camOrbit = {
+            theta: Math.PI * 0.25, // Horizontal angle
+            phi: Math.PI * 0.32,   // Vertical angle from top
+            radius: 28,
+            target: new THREE.Vector3(0, 3.5, 0),
+            isDragging: false,
+            downX: 0,
+            downY: 0,
+            prevX: 0,
+            prevY: 0,
+            dragDistance: 0
+        };
+
+        // Telemetry History Buffers
+        const TELEMETRY_SAMPLES = 45;
+        const keHistory = new Array(TELEMETRY_SAMPLES).fill(0);
+        const impactHistory = new Array(TELEMETRY_SAMPLES).fill(0);
+        let impactCountThisInterval = 0;
+        let maxImpactImpulse = 0;
+        let lastFrameTime = performance.now();
+        let frameCount = 0;
+        let currentFps = 60;
+        let lastTelemetryUpdate = performance.now();
+
+        // Sound Synthesizer (Tone.js)
+        let polySynth = null;
+        let lastSoundTime = 0;
+
+        // Color Palettes for Objects
+        const PALETTES = {
+            daylight: [0x06b6d4, 0x3b82f6, 0x6366f1, 0xf59e0b, 0x10b981, 0xec4899],
+            cyberpunk: [0x00f5d4, 0xff007f, 0x7b2cbf, 0x00bbf9, 0xfee440],
+            sunset: [0xf97316, 0xe11d48, 0xd97706, 0x9333ea, 0xfacc15],
+            space: [0x38bdf8, 0x818cf8, 0xc084fc, 0x2dd4bf, 0xe2e8f0]
+        };
+
+        // ============================================================================
+        // 2. INITIALIZATION (THREE.JS + CANNON.JS)
+        // ============================================================================
+        function initSimulator() {
+            const container = document.getElementById('canvas-container');
+
+            // 2.1 Three.js Scene & Camera
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xdbeafe);
+            scene.fog = new THREE.FogExp2(0xdbeafe, 0.012);
+
+            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 300);
+            updateCameraTransform();
+
+            // 2.2 Renderer with PCFSoftShadowMap & ACESFilmicToneMapping
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.1;
+            container.appendChild(renderer.domElement);
+
+            // 2.3 Cannon.js Physics World
+            world = new CANNON.World();
+            world.gravity.set(0, state.gravityY, 0);
+            world.broadphase = new CANNON.SAPBroadphase(world);
+            world.solver.iterations = 12;
+            world.allowSleep = true;
+
+            physMaterial = new CANNON.Material('standardPhysMaterial');
+            contactMaterial = new CANNON.ContactMaterial(physMaterial, physMaterial, {
+                friction: state.friction,
+                restitution: state.restitution
+            });
+            world.addContactMaterial(contactMaterial);
+
+            // 2.4 Build Floor, Lights, Starfield & Vortex Indicator
+            setupFloorAndEnvironment();
+            setupStarfield();
+            setupVortexCoreVisual();
+            setupLightingSystem();
+
+            // 2.5 Bind Interaction Events
+            setupInputEvents(renderer.domElement);
+            window.addEventListener('resize', onWindowResize);
+
+            // 2.6 Spawn Initial Showcase Structure
+            buildJengaTower();
+            spawnPrimitive('sphere', new THREE.Vector3(-4, 8, 2));
+            spawnPrimitive('poly', new THREE.Vector3(4, 10, -2));
+
+            showToast('🚀 3D 物理与光影沙盒已就绪！点击画面即可发射动能球');
+        }
+
+        function setupFloorAndEnvironment() {
+            // Physics Static Ground Plane
+            const groundShape = new CANNON.Plane();
+            const groundBody = new CANNON.Body({ mass: 0, material: physMaterial });
+            groundBody.addShape(groundShape);
+            groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
+            world.addBody(groundBody);
+
+            // Visual Floor Mesh (Physical Material for metallic reflections)
+            const floorGeo = new THREE.PlaneGeometry(160, 160);
+            const floorMat = new THREE.MeshStandardMaterial({
+                color: 0xe2e8f0,
+                roughness: 0.35,
+                metalness: 0.15
+            });
+            floorMesh = new THREE.Mesh(floorGeo, floorMat);
+            floorMesh.rotation.x = -Math.PI / 2;
+            floorMesh.receiveShadow = true;
+            scene.add(floorMesh);
+
+            // Precision Grid Overlay
+            gridHelper = new THREE.GridHelper(100, 50, 0x06b6d4, 0x94a3b8);
+            gridHelper.position.y = 0.01;
+            gridHelper.material.transparent = true;
+            gridHelper.material.opacity = 0.45;
+            scene.add(gridHelper);
+        }
+
+        function setupLightingSystem() {
+            ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+            scene.add(ambientLight);
+
+            hemiLight = new THREE.HemisphereLight(0xffffff, 0x64748b, 0.55);
+            hemiLight.position.set(0, 40, 0);
+            scene.add(hemiLight);
+
+            // Primary Directional Sun Light with High-Res Shadows
+            sunLight = new THREE.DirectionalLight(0xfffbeb, 1.35);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            sunLight.shadow.camera.near = 1;
+            sunLight.shadow.camera.far = 90;
+            const d = 26;
+            sunLight.shadow.camera.left = -d;
+            sunLight.shadow.camera.right = d;
+            sunLight.shadow.camera.top = d;
+            sunLight.shadow.camera.bottom = -d;
+            sunLight.shadow.bias = -0.0005;
+            scene.add(sunLight);
+
+            // Cyberpunk Neon Point Lights (initially dimmed)
+            neonLight1 = new THREE.PointLight(0x00f5d4, 0, 45);
+            neonLight1.position.set(-14, 10, 10);
+            scene.add(neonLight1);
+
+            neonLight2 = new THREE.PointLight(0xff007f, 0, 45);
+            neonLight2.position.set(14, 10, -10);
+            scene.add(neonLight2);
+
+            updateSunAngles();
+            setEnvironmentMode('daylight');
+        }
+
+        function setupStarfield() {
+            const starCount = 1200;
+            const positions = new Float32Array(starCount * 3);
+            const colors = new Float32Array(starCount * 3);
+
+            for (let i = 0; i < starCount; i++) {
+                const r = 65 + Math.random() * 80;
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.random() * Math.PI * 0.48; // Upper hemisphere
+                positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+                positions[i * 3 + 1] = r * Math.cos(phi) + 2;
+                positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+
+                const c = new THREE.Color().setHSL(0.55 + Math.random() * 0.15, 0.8, 0.75 + Math.random() * 0.25);
+                colors[i * 3] = c.r;
+                colors[i * 3 + 1] = c.g;
+                colors[i * 3 + 2] = c.b;
+            }
+
+            const starGeo = new THREE.BufferGeometry();
+            starGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            starGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            const starMat = new THREE.PointsMaterial({
+                size: 0.65,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.0
+            });
+
+            starfieldPoints = new THREE.Points(starGeo, starMat);
+            scene.add(starfieldPoints);
+        }
+
+        function setupVortexCoreVisual() {
+            const geo = new THREE.SphereGeometry(1.3, 32, 32);
+            const mat = new THREE.MeshBasicMaterial({
+                color: 0xd946ef,
+                wireframe: true,
+                transparent: true,
+                opacity: 0.75
+            });
+            vortexCoreMesh = new THREE.Mesh(geo, mat);
+            vortexCoreMesh.position.set(0, 6, 0);
+            vortexCoreMesh.visible = false;
+            scene.add(vortexCoreMesh);
+        }
+
+        // ============================================================================
+        // 3. ENVIRONMENT & LIGHTING SWITCHER
+        // ============================================================================
+        function setEnvironmentMode(mode) {
+            state.envMode = mode;
+
+            // Update active button styling
+            ['daylight', 'cyberpunk', 'sunset', 'space'].forEach(m => {
+                const btn = document.getElementById(`env-${m}`);
+                if (btn) btn.classList.toggle('active-preset', m === mode);
+            });
+
+            const badge = document.getElementById('current-env-badge');
+
+            if (mode === 'daylight') {
+                badge.textContent = 'STUDIO';
+                scene.background.setHex(0xe0f2fe);
+                scene.fog.color.setHex(0xe0f2fe);
+                scene.fog.density = 0.008;
+
+                ambientLight.color.setHex(0xffffff);
+                ambientLight.intensity = 0.45;
+                hemiLight.color.setHex(0xffffff);
+                hemiLight.groundColor.setHex(0x94a3b8);
+                hemiLight.intensity = 0.6;
+
+                sunLight.color.setHex(0xfffbeb);
+                sunLight.intensity = 1.3;
+                neonLight1.intensity = 0;
+                neonLight2.intensity = 0;
+
+                floorMesh.material.color.setHex(0xf1f5f9);
+                floorMesh.material.roughness = 0.4;
+                floorMesh.material.metalness = 0.1;
+                gridHelper.material.opacity = 0.45;
+                if (starfieldPoints) starfieldPoints.material.opacity = 0;
+
+                document.getElementById('slider-sun-el').value = 52;
+                document.getElementById('slider-sun-az').value = 35;
+                updateSunAngles();
+            } else if (mode === 'cyberpunk') {
+                badge.textContent = 'CYBER NEON';
+                scene.background.setHex(0x050511);
+                scene.fog.color.setHex(0x050511);
+                scene.fog.density = 0.015;
+
+                ambientLight.color.setHex(0x1e1b4b);
+                ambientLight.intensity = 0.4;
+                hemiLight.color.setHex(0x06b6d4);
+                hemiLight.groundColor.setHex(0x701a75);
+                hemiLight.intensity = 0.45;
+
+                sunLight.color.setHex(0x38bdf8);
+                sunLight.intensity = 0.65;
+                neonLight1.intensity = 3.2;
+                neonLight2.intensity = 3.2;
+
+                floorMesh.material.color.setHex(0x090d16);
+                floorMesh.material.roughness = 0.12;
+                floorMesh.material.metalness = 0.85;
+                gridHelper.material.opacity = 0.65;
+                if (starfieldPoints) starfieldPoints.material.opacity = 0.35;
+            } else if (mode === 'sunset') {
+                badge.textContent = 'GOLDEN HOUR';
+                scene.background.setHex(0x2e1025);
+                scene.fog.color.setHex(0x451a2b);
+                scene.fog.density = 0.012;
+
+                ambientLight.color.setHex(0xfed7aa);
+                ambientLight.intensity = 0.35;
+                hemiLight.color.setHex(0xf97316);
+                hemiLight.groundColor.setHex(0x3b0764);
+                hemiLight.intensity = 0.65;
+
+                sunLight.color.setHex(0xfb923c);
+                sunLight.intensity = 1.85;
+                neonLight1.intensity = 0;
+                neonLight2.intensity = 0;
+
+                floorMesh.material.color.setHex(0x1e1b2e);
+                floorMesh.material.roughness = 0.22;
+                floorMesh.material.metalness = 0.45;
+                gridHelper.material.opacity = 0.3;
+                if (starfieldPoints) starfieldPoints.material.opacity = 0.25;
+
+                document.getElementById('slider-sun-el').value = 14;
+                document.getElementById('slider-sun-az').value = 115;
+                updateSunAngles();
+            } else if (mode === 'space') {
+                badge.textContent = 'DEEP SPACE';
+                scene.background.setHex(0x02040a);
+                scene.fog.color.setHex(0x02040a);
+                scene.fog.density = 0.005;
+
+                ambientLight.color.setHex(0x38bdf8);
+                ambientLight.intensity = 0.25;
+                hemiLight.color.setHex(0x818cf8);
+                hemiLight.groundColor.setHex(0x020617);
+                hemiLight.intensity = 0.4;
+
+                sunLight.color.setHex(0xe0f2fe);
+                sunLight.intensity = 1.45;
+                neonLight1.intensity = 1.1;
+                neonLight2.intensity = 1.1;
+
+                floorMesh.material.color.setHex(0x080c17);
+                floorMesh.material.roughness = 0.18;
+                floorMesh.material.metalness = 0.7;
+                gridHelper.material.opacity = 0.5;
+                if (starfieldPoints) starfieldPoints.material.opacity = 0.95;
+            }
+            floorMesh.material.needsUpdate = true;
+        }
+
+        function updateSunAngles() {
+            const elDeg = parseFloat(document.getElementById('slider-sun-el').value);
+            const azDeg = parseFloat(document.getElementById('slider-sun-az').value);
+            state.sunElevation = elDeg;
+            state.sunAzimuth = azDeg;
+
+            document.getElementById('val-sun-el').textContent = `${Math.round(elDeg)}°`;
+            document.getElementById('val-sun-az').textContent = `${Math.round(azDeg)}°`;
+
+            const elRad = THREE.MathUtils.degToRad(elDeg);
+            const azRad = THREE.MathUtils.degToRad(azDeg);
+            const dist = 42;
+
+            sunLight.position.set(
+                dist * Math.cos(elRad) * Math.sin(azRad),
+                dist * Math.sin(elRad),
+                dist * Math.cos(elRad) * Math.cos(azRad)
+            );
+        }
+
+        function toggleWireframe() {
+            state.wireframe = !state.wireframe;
+            rigidObjects.forEach(obj => {
+                if (obj.mesh && obj.mesh.material) {
+                    obj.mesh.material.wireframe = state.wireframe;
+                }
+            });
+            const btn = document.getElementById('btn-wireframe');
+            btn.innerHTML = `<span>🕸️</span> 网格线框: ${state.wireframe ? '开' : '关'}`;
+            btn.classList.toggle('text-cyan-300', state.wireframe);
+        }
+
+        function toggleFloorGrid() {
+            state.showGrid = !state.showGrid;
+            gridHelper.visible = state.showGrid;
+            const btn = document.getElementById('btn-grid');
+            btn.innerHTML = `<span>📏</span> 地面标尺: ${state.showGrid ? '开' : '关'}`;
+            btn.classList.toggle('text-cyan-300', state.showGrid);
+        }
+
+        // ============================================================================
+        // 4. RIGID BODY SPAWNING & COLLISION SPARKS
+        // ============================================================================
+        function getRandomPaletteColor() {
+            const list = PALETTES[state.envMode] || PALETTES.daylight;
+            return list[Math.floor(Math.random() * list.length)];
+        }
+
+        function createPBRMaterial(colorHex, emissiveStrength = 0) {
+            return new THREE.MeshPhysicalMaterial({
+                color: colorHex,
+                metalness: state.envMode === 'cyberpunk' ? 0.55 : 0.3,
+                roughness: 0.2,
+                clearcoat: 0.6,
+                clearcoatRoughness: 0.15,
+                emissive: colorHex,
+                emissiveIntensity: state.envMode === 'cyberpunk' ? 0.28 : emissiveStrength,
+                wireframe: state.wireframe
+            });
+        }
+
+        function registerRigidBodyPair(mesh, body, mass) {
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            scene.add(mesh);
+            world.addBody(body);
+
+            // Listen for high-velocity impacts to spawn 3D spark bursts
+            body.addEventListener('collide', (event) => {
+                const relVel = Math.abs(event.contact.getImpactVelocityAlongNormal());
+                if (relVel > 2.6) {
+                    impactCountThisInterval++;
+                    const impulseEst = relVel * (mass || 1.5);
+                    if (impulseEst > maxImpactImpulse) maxImpactImpulse = impulseEst;
+
+                    // World contact point
+                    const cp = new THREE.Vector3(
+                        body.position.x + event.contact.ri.x,
+                        body.position.y + event.contact.ri.y,
+                        body.position.z + event.contact.ri.z
+                    );
+                    if (relVel > 4.2) {
+                        spawnCollisionSparks(cp, Math.min(Math.floor(relVel * 2.5), 28), mesh.material.color);
+                        triggerCollisionSound(relVel);
+                    }
+                }
+            });
+
+            rigidObjects.push({ mesh, body, mass });
+            return { mesh, body };
+        }
+
+        function spawnPrimitive(type, customPos = null, customVel = null, customScale = 1.0) {
+            const color = getRandomPaletteColor();
+            const mat = createPBRMaterial(color);
+            const pos = customPos || new THREE.Vector3(
+                (Math.random() - 0.5) * 8,
+                10 + Math.random() * 6,
+                (Math.random() - 0.5) * 8
+            );
+
+            let mesh, shape, mass = 2.0 * customScale;
+
+            if (type === 'sphere') {
+                const r = (0.75 + Math.random() * 0.35) * customScale;
+                mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 28, 28), mat);
+                shape = new CANNON.Sphere(r);
+                mass = (4 / 3) * Math.PI * Math.pow(r, 3) * 1.5;
+            } else if (type === 'box') {
+                const sx = (1.1 + Math.random() * 0.5) * customScale;
+                const sy = (1.1 + Math.random() * 0.5) * customScale;
+                const sz = (1.1 + Math.random() * 0.5) * customScale;
+                mesh = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat);
+                shape = new CANNON.Box(new CANNON.Vec3(sx / 2, sy / 2, sz / 2));
+                mass = sx * sy * sz * 1.2;
+            } else {
+                // Cylinder / Polyhedron visual with Sphere/Box proxy
+                const r = 0.85 * customScale;
+                const h = 1.5 * customScale;
+                mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 8), mat);
+                shape = new CANNON.Box(new CANNON.Vec3(r * 0.85, h / 2, r * 0.85));
+                mass = r * r * h * 1.8;
+            }
+
+            const body = new CANNON.Body({
+                mass,
+                material: physMaterial,
+                linearDamping: 0.04,
+                angularDamping: 0.04
+            });
+            body.addShape(shape);
+            body.position.set(pos.x, pos.y, pos.z);
+            body.angularVelocity.set(
+                (Math.random() - 0.5) * 3,
+                (Math.random() - 0.5) * 3,
+                (Math.random() - 0.5) * 3
+            );
+
+            if (customVel) {
+                body.velocity.set(customVel.x, customVel.y, customVel.z);
+            }
+
+            return registerRigidBodyPair(mesh, body, mass);
+        }
+
+        // Build a Jenga-style Composite Tower
+        function buildJengaTower() {
+            const levels = 8;
+            const blockLength = 3.6;
+            const blockHeight = 0.65;
+            const blockWidth = 1.15;
+
+            for (let l = 0; l < levels; l++) {
+                const y = blockHeight / 2 + l * (blockHeight + 0.01);
+                const even = l % 2 === 0;
+                const color = PALETTES[state.envMode][l % PALETTES[state.envMode].length];
+
+                for (let i = -1; i <= 1; i++) {
+                    const mat = createPBRMaterial(color);
+                    const offset = i * (blockWidth + 0.06);
+
+                    const sx = even ? blockLength : blockWidth;
+                    const sz = even ? blockWidth : blockLength;
+
+                    const mesh = new THREE.Mesh(new THREE.BoxGeometry(sx, blockHeight, sz), mat);
+                    const shape = new CANNON.Box(new CANNON.Vec3(sx / 2, blockHeight / 2, sz / 2));
+
+                    const body = new CANNON.Body({
+                        mass: 1.6,
+                        material: physMaterial
+                    });
+                    body.addShape(shape);
+                    body.position.set(
+                        even ? 0 : offset,
+                        y,
+                        even ? offset : 0
+                    );
+
+                    registerRigidBodyPair(mesh, body, 1.6);
+                }
+            }
+            showToast('🏛️ 已生成 24 块复合高塔结构');
+        }
+
+        // Build a Connected Pendulum Chain using PointToPointConstraints
+        function buildPendulumChain() {
+            const links = 5;
+            const startY = 16;
+            const radius = 0.65;
+            let prevBody = null;
+
+            // Static anchor sphere at top
+            const anchorMat = createPBRMaterial(0xf43f5e, 0.5);
+            const anchorMesh = new THREE.Mesh(new THREE.SphereGeometry(0.45, 16, 16), anchorMat);
+            const anchorBody = new CANNON.Body({ mass: 0, material: physMaterial });
+            anchorBody.addShape(new CANNON.Sphere(0.45));
+            anchorBody.position.set(0, startY, -3);
+            registerRigidBodyPair(anchorMesh, anchorBody, 0);
+            prevBody = anchorBody;
+
+            for (let i = 1; i <= links; i++) {
+                const mat = createPBRMaterial(0x22d3ee, 0.25);
+                const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 24, 24), mat);
+                const body = new CANNON.Body({ mass: 2.2, material: physMaterial });
+                body.addShape(new CANNON.Sphere(radius));
+                body.position.set(i * 1.45, startY - i * 0.4, -3);
+
+                registerRigidBodyPair(mesh, body, 2.2);
+
+                const dist = radius * 1.15;
+                const c = new CANNON.PointToPointConstraint(
+                    prevBody,
+                    new CANNON.Vec3(0, -dist, 0),
+                    body,
+                    new CANNON.Vec3(0, dist, 0)
+                );
+                world.addConstraint(c);
+                activeConstraints.push(c);
+                prevBody = body;
+            }
+            showToast('⛓️ 已生成刚体约束摆球链');
+        }
+
+        function spawnStarRain(count = 30) {
+            const types = ['sphere', 'box', 'poly'];
+            for (let i = 0; i < count; i++) {
+                const t = types[i % types.length];
+                const pos = new THREE.Vector3(
+                    (Math.random() - 0.5) * 18,
+                    14 + i * 0.9,
+                    (Math.random() - 0.5) * 18
+                );
+                spawnPrimitive(t, pos, null, 0.85);
+            }
+            showToast(`☄️ 漫天星雨已投放 ${count} 个刚体对象`);
+        }
+
+        // 3D Spark Particle Burst on High-Energy Collision
+        function spawnCollisionSparks(origin, count, baseColor) {
+            if (sparkSystems.length > 25) return; // Cap active burst systems
+
+            const positions = new Float32Array(count * 3);
+            const velocities = [];
+
+            for (let i = 0; i < count; i++) {
+                positions[i * 3] = origin.x;
+                positions[i * 3 + 1] = Math.max(0.1, origin.y);
+                positions[i * 3 + 2] = origin.z;
+
+                velocities.push(new THREE.Vector3(
+                    (Math.random() - 0.5) * 12,
+                    Math.random() * 8 + 2,
+                    (Math.random() - 0.5) * 12
+                ));
+            }
+
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+            const mat = new THREE.PointsMaterial({
+                color: baseColor || 0xfacc15,
+                size: 0.28,
+                transparent: true,
+                opacity: 1.0,
+                blending: THREE.AdditiveBlending
+            });
+
+            const points = new THREE.Points(geo, mat);
+            scene.add(points);
+            sparkSystems.push({ points, velocities, age: 0, maxAge: 0.55, count });
+            activeSparkCount += count;
+        }
+
+        function updateSparkParticles(dt) {
+            for (let i = sparkSystems.length - 1; i >= 0; i--) {
+                const sys = sparkSystems[i];
+                sys.age += dt;
+                if (sys.age >= sys.maxAge) {
+                    scene.remove(sys.points);
+                    sys.points.geometry.dispose();
+                    sys.points.material.dispose();
+                    activeSparkCount = Math.max(0, activeSparkCount - sys.count);
+                    sparkSystems.splice(i, 1);
+                    continue;
+                }
+
+                const posAttr = sys.points.geometry.attributes.position;
+                for (let j = 0; j < sys.count; j++) {
+                    const v = sys.velocities[j];
+                    v.y -= 15 * dt; // Spark gravity
+                    posAttr.array[j * 3] += v.x * dt;
+                    posAttr.array[j * 3 + 1] = Math.max(0.05, posAttr.array[j * 3 + 1] + v.y * dt);
+                    posAttr.array[j * 3 + 2] += v.z * dt;
+                }
+                posAttr.needsUpdate = true;
+                sys.points.material.opacity = 1.0 - (sys.age / sys.maxAge);
+            }
+        }
+
+        // ============================================================================
+        // 5. FORCE FIELDS, SHOCKWAVE & PROJECTILES
+        // ============================================================================
+        function toggleBlackHoleVortex() {
+            state.vortexActive = !state.vortexActive;
+            vortexCoreMesh.visible = state.vortexActive;
+
+            const btn = document.getElementById('btn-vortex');
+            const label = document.getElementById('vortex-label');
+            const teleState = document.getElementById('telemetry-vortex-state');
+
+            if (state.vortexActive) {
+                label.textContent = '黑洞引力涡流: 开';
+                btn.classList.add('active-preset');
+                teleState.textContent = 'SINGULARITY ON';
+                teleState.className = 'text-fuchsia-400 font-bold';
+                // Wake up all sleeping bodies
+                rigidObjects.forEach(o => o.body.wakeUp());
+                showToast('🌀 黑洞奇点已激活！所有刚体正受向心涡流牵引');
+            } else {
+                label.textContent = '黑洞引力涡流: 关';
+                btn.classList.remove('active-preset');
+                teleState.textContent = 'STANDBY';
+                teleState.className = 'text-slate-400';
+            }
+        }
+
+        function triggerShockwaveBlast() {
+            const center = new CANNON.Vec3(0, 2.0, 0);
+            rigidObjects.forEach(obj => {
+                if (obj.body.mass === 0) return;
+                obj.body.wakeUp();
+                const dx = obj.body.position.x - center.x;
+                const dy = obj.body.position.y - center.y + 1.5;
+                const dz = obj.body.position.z - center.z;
+                const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) + 0.5;
+                const strength = (65 * obj.body.mass) / Math.max(1.2, dist * 0.45);
+
+                const impulse = new CANNON.Vec3(
+                    (dx / dist) * strength,
+                    Math.abs(dy / dist) * strength * 0.9 + 8 * obj.body.mass,
+                    (dz / dist) * strength
+                );
+                obj.body.applyImpulse(impulse, obj.body.position);
+            });
+
+            spawnCollisionSparks(new THREE.Vector3(0, 2.5, 0), 35, 0xf97316);
+            triggerCollisionSound(18);
+            showToast('💥 径向高能冲击波已释放！');
+        }
+
+        function shootKineticProjectile(targetRayDir = null) {
+            const dir = targetRayDir || new THREE.Vector3();
+            if (!targetRayDir) {
+                camera.getWorldDirection(dir);
+            }
+
+            const spawnPos = camera.position.clone().addScaledVector(dir, 2.5);
+            const speed = 38;
+            const vel = new THREE.Vector3(dir.x * speed, dir.y * speed, dir.z * speed);
+
+            const mat = createPBRMaterial(0x22d3ee, 0.55);
+            const r = 0.75;
+            const mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 28, 28), mat);
+            const body = new CANNON.Body({
+                mass: 5.5,
+                material: physMaterial
+            });
+            body.addShape(new CANNON.Sphere(r));
+            body.position.set(spawnPos.x, spawnPos.y, spawnPos.z);
+            body.velocity.set(vel.x, vel.y, vel.z);
+
+            registerRigidBodyPair(mesh, body, 5.5);
+            triggerCollisionSound(10);
+        }
+
+        function updatePhysicsParams() {
+            state.gravityY = parseFloat(document.getElementById('slider-gravity').value);
+            state.restitution = parseFloat(document.getElementById('slider-restitution').value);
+            state.friction = parseFloat(document.getElementById('slider-friction').value);
+            state.timeScale = parseFloat(document.getElementById('slider-timescale').value);
+
+            document.getElementById('val-gravity').textContent = `${state.gravityY.toFixed(1)} m/s²`;
+            document.getElementById('val-restitution').textContent = state.restitution.toFixed(2);
+            document.getElementById('val-friction').textContent = state.friction.toFixed(2);
+            document.getElementById('val-timescale').textContent = `${state.timeScale.toFixed(2)}x`;
+
+            world.gravity.set(0, state.gravityY, 0);
+            contactMaterial.restitution = state.restitution;
+            contactMaterial.friction = state.friction;
+
+            rigidObjects.forEach(o => o.body.wakeUp());
+        }
+
+        function setZeroGravity() {
+            document.getElementById('slider-gravity').value = 0;
+            updatePhysicsParams();
+            // Give objects a subtle float nudge
+            rigidObjects.forEach(o => {
+                if (o.body.mass > 0) {
+                    o.body.wakeUp();
+                    o.body.applyImpulse(new CANNON.Vec3(0, o.body.mass * 2.5, 0), o.body.position);
+                }
+            });
+            showToast('🛰️ 已切换至零重力悬浮模式 (0.0 m/s²)');
+        }
+
+        function resetScene() {
+            // Remove constraints
+            activeConstraints.forEach(c => world.removeConstraint(c));
+            activeConstraints.length = 0;
+
+            // Remove rigid bodies & meshes
+            for (let i = rigidObjects.length - 1; i >= 0; i--) {
+                const obj = rigidObjects[i];
+                world.removeBody(obj.body);
+                scene.remove(obj.mesh);
+                if (obj.mesh.geometry) obj.mesh.geometry.dispose();
+                if (obj.mesh.material) obj.mesh.material.dispose();
+            }
+            rigidObjects.length = 0;
+            maxImpactImpulse = 0;
+
+            showToast('🧹 场景已清空');
+        }
+
+        // ============================================================================
+        // 6. CAMERA ORBIT & RAYCAST INTERACTION
+        // ============================================================================
+        function updateCameraTransform() {
+            camOrbit.phi = Math.max(0.12, Math.min(Math.PI * 0.47, camOrbit.phi));
+            camOrbit.radius = Math.max(8, Math.min(85, camOrbit.radius));
+
+            camera.position.x = camOrbit.target.x + camOrbit.radius * Math.sin(camOrbit.phi) * Math.sin(camOrbit.theta);
+            camera.position.y = camOrbit.target.y + camOrbit.radius * Math.cos(camOrbit.phi);
+            camera.position.z = camOrbit.target.z + camOrbit.radius * Math.sin(camOrbit.phi) * Math.cos(camOrbit.theta);
+            camera.lookAt(camOrbit.target);
+        }
+
+        function setupInputEvents(domElement) {
+            const raycaster = new THREE.Raycaster();
+            const mouse = new THREE.Vector2();
+
+            domElement.addEventListener('pointerdown', (e) => {
+                if (e.button !== 0) return;
+                camOrbit.isDragging = true;
+                camOrbit.downX = e.clientX;
+                camOrbit.downY = e.clientY;
+                camOrbit.prevX = e.clientX;
+                camOrbit.prevY = e.clientY;
+                camOrbit.dragDistance = 0;
+            });
+
+            window.addEventListener('pointermove', (e) => {
+                if (!camOrbit.isDragging) return;
+                const dx = e.clientX - camOrbit.prevX;
+                const dy = e.clientY - camOrbit.prevY;
+                camOrbit.prevX = e.clientX;
+                camOrbit.prevY = e.clientY;
+                camOrbit.dragDistance += Math.abs(dx) + Math.abs(dy);
+
+                camOrbit.theta -= dx * 0.007;
+                camOrbit.phi -= dy * 0.007;
+                updateCameraTransform();
+            });
+
+            window.addEventListener('pointerup', (e) => {
+                if (!camOrbit.isDragging) return;
+                camOrbit.isDragging = false;
+
+                // If pointer barely moved, treat as an interactive click in 3D space
+                if (camOrbit.dragDistance < 6) {
+                    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+                    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+                    raycaster.setFromCamera(mouse, camera);
+
+                    if (state.clickMode === 'shoot') {
+                        shootKineticProjectile(raycaster.ray.direction.clone().normalize());
+                    } else {
+                        // Impulse mode: check if clicking on a rigid body
+                        const meshes = rigidObjects.map(o => o.mesh);
+                        const hits = raycaster.intersectObjects(meshes, false);
+                        if (hits.length > 0) {
+                            const hitMesh = hits[0].object;
+                            const pair = rigidObjects.find(o => o.mesh === hitMesh);
+                            if (pair && pair.body.mass > 0) {
+                                pair.body.wakeUp();
+                                const imp = new CANNON.Vec3(
+                                    raycaster.ray.direction.x * 18 * pair.body.mass,
+                                    14 * pair.body.mass,
+                                    raycaster.ray.direction.z * 18 * pair.body.mass
+                                );
+                                pair.body.applyImpulse(imp, pair.body.position);
+                                spawnCollisionSparks(hits[0].point, 18, 0x38bdf8);
+                                triggerCollisionSound(12);
+                            }
+                        } else {
+                            shootKineticProjectile(raycaster.ray.direction.clone().normalize());
+                        }
+                    }
+                }
+            });
+
+            domElement.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                camOrbit.radius += e.deltaY * 0.025;
+                updateCameraTransform();
+            }, { passive: false });
+        }
+
+        function setClickMode(mode) {
+            state.clickMode = mode;
+            const shootBtn = document.getElementById('mode-shoot-btn');
+            const impBtn = document.getElementById('mode-impulse-btn');
+            const hint = document.getElementById('footer-click-hint');
+
+            if (mode === 'shoot') {
+                shootBtn.className = 'px-2.5 py-1 rounded-lg text-xs font-medium transition-all bg-cyan-500 text-slate-950 shadow-sm flex items-center gap-1.5';
+                impBtn.className = 'px-2.5 py-1 rounded-lg text-xs font-medium transition-all text-slate-300 hover:text-white flex items-center gap-1.5';
+                hint.textContent = '朝鼠标方向发射高速动能球';
+            } else {
+                impBtn.className = 'px-2.5 py-1 rounded-lg text-xs font-medium transition-all bg-cyan-500 text-slate-950 shadow-sm flex items-center gap-1.5';
+                shootBtn.className = 'px-2.5 py-1 rounded-lg text-xs font-medium transition-all text-slate-300 hover:text-white flex items-center gap-1.5';
+                hint.textContent = '点击刚体施加定向脉冲推力';
+            }
+        }
+
+        // ============================================================================
+        // 7. AUDIO SYNTHESIS & UI HELPERS
+        // ============================================================================
+        async function toggleAudio() {
+            if (!state.audioEnabled) {
+                try {
+                    await Tone.start();
+                    if (!polySynth) {
+                        polySynth = new Tone.PolySynth(Tone.Synth, {
+                            oscillator: { type: 'triangle' },
+                            envelope: { attack: 0.005, decay: 0.12, sustain: 0, release: 0.1 }
+                        }).toDestination();
+                        polySynth.volume.value = -12;
+                    }
+                    state.audioEnabled = true;
+                    document.getElementById('sound-icon').textContent = '🔊';
+                    document.getElementById('sound-label').textContent = '音效: 开';
+                    showToast('🔊 物理碰撞合成音效已开启');
+                } catch (err) {
+                    console.warn('Audio init skipped:', err);
+                }
+            } else {
+                state.audioEnabled = false;
+                document.getElementById('sound-icon').textContent = '🔇';
+                document.getElementById('sound-label').textContent = '音效: 关';
+            }
+        }
+
+        function triggerCollisionSound(impactSpeed) {
+            if (!state.audioEnabled || !polySynth) return;
+            const now = performance.now();
+            if (now - lastSoundTime < 55) return;
+            lastSoundTime = now;
+
+            const notes = ['C3', 'E3', 'G3', 'A3', 'C4', 'D4', 'G4', 'A4'];
+            const idx = Math.min(notes.length - 1, Math.floor(impactSpeed / 3));
+            const vel = Math.min(1, impactSpeed / 22);
+            try {
+                polySynth.triggerAttackRelease(notes[idx], '32n', undefined, vel);
+            } catch (e) {}
+        }
+
+        function togglePanels() {
+            state.panelsVisible = !state.panelsVisible;
+            const left = document.getElementById('left-panel');
+            const right = document.getElementById('right-panel');
+            const label = document.getElementById('hud-toggle-label');
+
+            if (state.panelsVisible) {
+                left.style.transform = 'translateX(0)';
+                if (right) right.style.transform = 'translateX(0)';
+                label.textContent = '收起面板';
+            } else {
+                left.style.transform = 'translateX(-110%)';
+                if (right) right.style.transform = 'translateX(110%)';
+                label.textContent = '展开面板';
+            }
+        }
+
+        let toastTimeout = null;
+        function showToast(message) {
+            const banner = document.getElementById('toast-banner');
+            const text = document.getElementById('toast-text');
+            text.textContent = message;
+            banner.classList.remove('opacity-0', '-translate-y-2');
+            banner.classList.add('opacity-100', 'translate-y-0');
+
+            if (toastTimeout) clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => {
+                banner.classList.remove('opacity-100', 'translate-y-0');
+                banner.classList.add('opacity-0', '-translate-y-2');
+            }, 2600);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // ============================================================================
+        // 8. REAL-TIME SVG TELEMETRY & ANIMATION LOOP
+        // ============================================================================
+        function updateTelemetryDashboard(totalKE) {
+            // Push new samples
+            keHistory.push(totalKE);
+            keHistory.shift();
+
+            impactHistory.push(impactCountThisInterval);
+            impactHistory.shift();
+            const currentImpacts = impactCountThisInterval;
+            impactCountThisInterval = 0;
+
+            // Update Text Readouts
+            document.getElementById('telemetry-fps').textContent = currentFps;
+            document.getElementById('telemetry-bodies').textContent = rigidObjects.length;
+            document.getElementById('telemetry-ke').textContent = `${totalKE.toFixed(1)} J`;
+            document.getElementById('telemetry-impacts').textContent = `${currentImpacts * 5} Hz`;
+            document.getElementById('telemetry-peak-impact').textContent = `${maxImpactImpulse.toFixed(1)} N·s`;
+            document.getElementById('telemetry-sparks').textContent = activeSparkCount;
+
+            // Circular Gauges (Circumference = 2 * PI * 19 ≈ 119.38)
+            const circ = 119.38;
+            const fpsRatio = Math.min(1, currentFps / 60);
+            document.getElementById('gauge-fps-circle').setAttribute('stroke-dashoffset', (circ * (1 - fpsRatio)).toFixed(1));
+
+            const bodyRatio = Math.min(1, rigidObjects.length / 80);
+            document.getElementById('gauge-bodies-circle').setAttribute('stroke-dashoffset', (circ * (1 - bodyRatio)).toFixed(1));
+
+            // Build SVG Polyline for Kinetic Energy (260x72)
+            const maxKE = Math.max(200, ...keHistory);
+            const kePoints = keHistory.map((val, idx) => {
+                const x = (idx / (TELEMETRY_SAMPLES - 1)) * 260;
+                const y = 70 - Math.min(66, (val / maxKE) * 64);
+                return `${x.toFixed(1)},${y.toFixed(1)}`;
+            }).join(' ');
+
+            document.getElementById('svg-ke-line').setAttribute('points', kePoints);
+            document.getElementById('svg-ke-area').setAttribute('points', `0,72 ${kePoints} 260,72`);
+
+            // Build SVG Polyline for Collision Impacts (260x56)
+            const maxImp = Math.max(8, ...impactHistory);
+            const impPoints = impactHistory.map((val, idx) => {
+                const x = (idx / (TELEMETRY_SAMPLES - 1)) * 260;
+                const y = 53 - Math.min(48, (val / maxImp) * 46);
+                return `${x.toFixed(1)},${y.toFixed(1)}`;
+            }).join(' ');
+            document.getElementById('svg-impact-line').setAttribute('points', impPoints);
+
+            // Radar & Camera Vector Indicator
+            const azDeg = Math.round((THREE.MathUtils.radToDeg(camOrbit.theta) % 360 + 360) % 360);
+            const elDeg = Math.round(90 - THREE.MathUtils.radToDeg(camOrbit.phi));
+            document.getElementById('telemetry-cam-orbit').textContent = `${azDeg}° / ${elDeg}°`;
+            document.getElementById('telemetry-cam-dist').textContent = `${camOrbit.radius.toFixed(1)} m`;
+            document.getElementById('telemetry-grav-vec').textContent = `[0, ${state.gravityY.toFixed(1)}, 0]`;
+
+            // Move Camera Azimuth Dot on SVG Radar
+            const dotX = 40 + 28 * Math.sin(camOrbit.theta);
+            const dotY = 40 - 28 * Math.cos(camOrbit.theta);
+            const camDot = document.getElementById('radar-cam-dot');
+            camDot.setAttribute('cx', dotX.toFixed(1));
+            camDot.setAttribute('cy', dotY.toFixed(1));
+
+            // Gravity Vector Line length on Radar
+            const gravLen = Math.max(-28, Math.min(28, (state.gravityY / -20) * 28));
+            document.getElementById('radar-grav-line').setAttribute('y2', (40 + gravLen).toFixed(1));
+        }
+
+        function animateLoop() {
+            requestAnimationFrame(animateLoop);
+
+            const now = performance.now();
+            const rawDt = Math.min(0.1, (now - lastFrameTime) / 1000);
+            lastFrameTime = now;
+            frameCount++;
+
+            // Apply Black Hole Vortex Force Field if active
+            if (state.vortexActive) {
+                vortexCoreMesh.rotation.y += rawDt * 2.8;
+                vortexCoreMesh.rotation.x += rawDt * 1.5;
+                const center = new CANNON.Vec3(0, 6, 0);
+
+                rigidObjects.forEach(obj => {
+                    if (obj.body.mass === 0) return;
+                    obj.body.wakeUp();
+                    const dx = center.x - obj.body.position.x;
+                    const dy = center.y - obj.body.position.y;
+                    const dz = center.z - obj.body.position.z;
+                    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) + 0.1;
+
+                    // Radial pull + tangential swirl
+                    const pull = 28 * obj.body.mass;
+                    const swirl = 14 * obj.body.mass;
+                    obj.body.applyForce(
+                        new CANNON.Vec3(
+                            (dx / dist) * pull - (dz / dist) * swirl,
+                            (dy / dist) * pull * 1.2,
+                            (dz / dist) * pull + (dx / dist) * swirl
+                        ),
+                        obj.body.position
+                    );
+                });
+            }
+
+            // Step Physics Engine with Time Scale
+            const scaledDt = rawDt * state.timeScale;
+            world.step(1 / 60, scaledDt, 3);
+
+            // Sync Three.js Meshes with Cannon.js Rigid Bodies & Compute Total Kinetic Energy
+            let totalKineticEnergy = 0;
+            for (let i = rigidObjects.length - 1; i >= 0; i--) {
+                const obj = rigidObjects[i];
+                obj.mesh.position.copy(obj.body.position);
+                obj.mesh.quaternion.copy(obj.body.quaternion);
+
+                // Remove bodies that fell far out of bounds
+                if (obj.body.position.y < -30 || obj.body.position.length() > 140) {
+                    world.removeBody(obj.body);
+                    scene.remove(obj.mesh);
+                    rigidObjects.splice(i, 1);
+                    continue;
+                }
+
+                if (obj.body.mass > 0) {
+                    const v2 = obj.body.velocity.lengthSquared();
+                    totalKineticEnergy += 0.5 * obj.body.mass * v2;
+                }
+            }
+
+            // Update 3D Spark Particles
+            updateSparkParticles(rawDt);
+
+            // Subtle Starfield Rotation in Space/Cyberpunk mode
+            if (starfieldPoints && starfieldPoints.material.opacity > 0) {
+                starfieldPoints.rotation.y += rawDt * 0.02;
+            }
+
+            // Update SVG Telemetry every 200ms
+            if (now - lastTelemetryUpdate >= 200) {
+                currentFps = Math.min(120, Math.round((frameCount * 1000) / (now - lastTelemetryUpdate)));
+                frameCount = 0;
+                lastTelemetryUpdate = now;
+                updateTelemetryDashboard(totalKineticEnergy);
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Start simulation on window onload as required
+        window.onload = function () {
+            initSimulator();
+            animateLoop();
+        };
+    </script>
+</body>
+</html>

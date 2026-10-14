@@ -1,0 +1,1051 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>刚体沙盒 · Claude 版</title>
+<style>
+  :root{
+    --panel:rgba(13,17,27,.80); --panel2:rgba(255,255,255,.045); --line:rgba(255,255,255,.10);
+    --text:#e9eef6; --muted:#8f9bb0; --accent:#5cc8ff; --accent2:#b07cff; --ok:#4ade80; --warn:#fbbf24; --bad:#f87171;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:#0b0f17;color:var(--text);
+    font:13px/1.45 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
+  #stage{position:fixed;inset:0}
+  #stage canvas{display:block;touch-action:none;cursor:crosshair}
+  .panel{position:fixed;z-index:5;background:var(--panel);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(0,0,0,.35)}
+  #left{top:12px;left:12px;width:292px;max-height:calc(100vh - 70px);overflow-y:auto;padding:12px 12px 6px}
+  #left::-webkit-scrollbar{width:6px} #left::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);border-radius:3px}
+  #right{top:12px;right:12px;width:258px;padding:12px}
+  #topbar{top:12px;left:50%;transform:translateX(-50%);display:flex;gap:6px;padding:6px}
+  #hint{left:50%;bottom:12px;transform:translateX(-50%);padding:7px 14px;font-size:12px;color:var(--muted);white-space:nowrap}
+  #hint b{color:var(--text);font-weight:600}
+  .brand{display:flex;align-items:center;gap:10px;margin:0 0 10px}
+  .logo{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;font-weight:800;color:#0b0f17}
+  .brand h1{font-size:15px;margin:0;letter-spacing:.3px}
+  .brand p{margin:0;color:var(--muted);font-size:11px}
+  section{background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:10px;margin-bottom:9px}
+  section h2{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--accent);margin:0 0 8px;text-transform:uppercase;display:flex;justify-content:space-between;align-items:center}
+  section h2 small{color:var(--muted);font-weight:500;text-transform:none;letter-spacing:0}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .grid.three{grid-template-columns:1fr 1fr 1fr}
+  .btn{appearance:none;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--text);border-radius:9px;
+    padding:7px 8px;font:inherit;font-size:12px;cursor:pointer;transition:background .15s,border-color .15s,transform .05s;text-align:center}
+  .btn:hover{background:rgba(255,255,255,.12);border-color:rgba(92,200,255,.5)}
+  .btn:active{transform:translateY(1px)}
+  .btn.on{background:linear-gradient(135deg,rgba(92,200,255,.32),rgba(176,124,255,.32));border-color:var(--accent)}
+  .btn.warn{border-color:rgba(248,113,113,.4)}
+  .btn.wide{grid-column:1/-1}
+  .row{margin:6px 0 2px}
+  .row label{display:flex;justify-content:space-between;font-size:12px;color:#c7cfdc}
+  .row label span{font-variant-numeric:tabular-nums;color:var(--accent)}
+  input[type=range]{width:100%;accent-color:var(--accent);margin:4px 0 0}
+  .check{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-bottom:7px}
+  .check input{accent-color:var(--accent)}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:7px 9px}
+  .stat .k{font-size:10.5px;color:var(--muted)}
+  .stat .v{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2}
+  .stat .v small{font-size:11px;color:var(--muted);font-weight:500;margin-left:2px}
+  .spark{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:7px 9px;margin-bottom:6px}
+  .spark .k{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted)}
+  .spark .k b{color:var(--text);font-variant-numeric:tabular-nums}
+  .spark canvas{width:100%;height:38px;display:block;margin-top:4px}
+  .kv{font:11px/1.7 ui-monospace,Consolas,monospace;color:var(--muted)}
+  .kv b{color:var(--text);font-weight:500}
+  #toast{position:fixed;z-index:9;left:50%;top:64px;transform:translate(-50%,-8px);opacity:0;pointer-events:none;
+    background:rgba(13,17,27,.92);border:1px solid var(--line);border-radius:10px;padding:8px 14px;font-size:12.5px;transition:all .25s;max-width:90vw;text-align:center}
+  #toast.show{opacity:1;transform:translate(-50%,0)}
+  #boot{position:fixed;inset:0;display:grid;place-items:center;z-index:20;background:#0b0f17;color:var(--muted);font-size:13px;text-align:center;padding:20px}
+  .hidden{display:none!important}
+  .note{font-size:10.5px;color:var(--muted);margin:2px 2px 8px}
+  @media (max-width:760px){
+    #left{top:auto;bottom:10px;left:10px;right:10px;width:auto;max-height:44vh}
+    #right{top:58px;right:10px;width:168px;padding:8px}
+    #right .more{display:none}
+    #hint{display:none}
+    #topbar{top:10px}
+  }
+</style>
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/",
+  "cannon-es":"https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
+}}
+</script>
+</head>
+<body>
+<div id="stage"></div>
+<div id="boot">正在加载 three.js 与 cannon-es …</div>
+
+<div id="topbar" class="panel">
+  <button class="btn" id="b-audio" title="碰撞音效（按冲击速度合成）">🔇 音效</button>
+  <button class="btn" id="b-pause" title="P">⏸ 暂停</button>
+  <button class="btn" id="b-panels" title="H">隐藏面板</button>
+</div>
+
+<aside id="left" class="panel">
+  <div class="brand">
+    <div class="logo">R</div>
+    <div><h1>刚体沙盒</h1><p>three.js r164 · cannon-es · 实例化渲染</p></div>
+  </div>
+
+  <section>
+    <h2>光照环境 <small>4 套预设</small></h2>
+    <div class="grid" id="presets">
+      <button class="btn" data-preset="day">☀️ 白昼</button>
+      <button class="btn" data-preset="sunset">🌇 黄昏</button>
+      <button class="btn" data-preset="neon">🌃 霓虹夜</button>
+      <button class="btn" data-preset="space">🌌 深空</button>
+    </div>
+    <div class="row"><label>太阳高度 <span id="v-elev"></span></label><input id="r-elev" type="range" min="3" max="89" step="1"></div>
+    <div class="row"><label>太阳方位 <span id="v-azim"></span></label><input id="r-azim" type="range" min="0" max="359" step="1"></div>
+    <div class="grid three" style="margin-top:8px">
+      <button class="btn on" id="b-shadow">阴影</button>
+      <button class="btn on" id="b-grid">网格</button>
+      <button class="btn" id="b-wire">线框</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>物理参数</h2>
+    <div class="row"><label>重力 g <span id="v-grav"></span></label><input id="r-grav" type="range" min="-25" max="0" step="0.1" value="-9.8"></div>
+    <div class="row"><label>弹性系数 <span id="v-rest"></span></label><input id="r-rest" type="range" min="0" max="0.95" step="0.01" value="0.3"></div>
+    <div class="row"><label>摩擦系数 <span id="v-fric"></span></label><input id="r-fric" type="range" min="0" max="1" step="0.01" value="0.35"></div>
+    <div class="row"><label>时间流速 <span id="v-time"></span></label><input id="r-time" type="range" min="0.05" max="2" step="0.05" value="1"></div>
+    <div class="grid" style="margin-top:8px">
+      <button class="btn" id="b-zerog" title="G">零重力</button>
+      <button class="btn" id="b-sparks">碰撞火花</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>生成物体 <small id="cap-note"></small></h2>
+    <div class="grid three">
+      <button class="btn" data-spawn="sphere">● 金属球</button>
+      <button class="btn" data-spawn="box">■ 方块</button>
+      <button class="btn" data-spawn="cyl">▮ 圆柱</button>
+    </div>
+    <div class="grid" style="margin-top:6px">
+      <button class="btn" data-rain="20">随机投放 ×20</button>
+      <button class="btn" data-rain="80">随机投放 ×80</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>场景搭建</h2>
+    <label class="check"><input type="checkbox" id="c-clear" checked> 搭建前清空场景</label>
+    <div class="grid">
+      <button class="btn" data-build="tower">叠叠高塔</button>
+      <button class="btn" data-build="dominoes">多米诺连锁</button>
+      <button class="btn" data-build="cradle">牛顿摆</button>
+      <button class="btn" data-build="pyramid">方块金字塔</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>力场</h2>
+    <div class="grid">
+      <button class="btn" id="b-hole" title="B">黑洞引力场</button>
+      <button class="btn" id="b-blast" title="F">径向冲击波</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>存档 <small>不联网</small></h2>
+    <div class="grid">
+      <button class="btn" id="b-qsave">本地快照·存</button>
+      <button class="btn" id="b-qload">本地快照·读</button>
+      <button class="btn" id="b-export">导出 JSON 文件</button>
+      <button class="btn" id="b-import">导入 JSON 文件</button>
+    </div>
+    <p class="note">快照只存在当前浏览器；要换设备请用导出/导入。牛顿摆的绳索约束不写入存档。</p>
+    <input type="file" id="f-import" accept="application/json,.json" class="hidden">
+  </section>
+
+  <section>
+    <h2>工具</h2>
+    <div class="grid">
+      <button class="btn" id="b-bench">性能压测</button>
+      <button class="btn warn" id="b-clear" title="R">清空场景</button>
+    </div>
+  </section>
+</aside>
+
+<aside id="right" class="panel">
+  <div class="stats">
+    <div class="stat"><div class="k">帧率</div><div class="v" id="s-fps">–</div></div>
+    <div class="stat"><div class="k">刚体（活动/总数）</div><div class="v" id="s-bodies">–</div></div>
+    <div class="stat more"><div class="k">物理步进</div><div class="v" id="s-phys">–</div></div>
+    <div class="stat more"><div class="k">渲染提交 (CPU)</div><div class="v" id="s-rend">–</div></div>
+  </div>
+  <div class="spark more"><div class="k">帧率曲线 <b id="s-fps2"></b></div><canvas id="g-fps"></canvas></div>
+  <div class="spark more"><div class="k">平动动能 Σ½mv² <b id="s-ke"></b></div><canvas id="g-ke"></canvas></div>
+  <div class="kv more">
+    接触点 <b id="s-contacts">–</b> · Draw calls <b id="s-calls">–</b><br>
+    三角面 <b id="s-tris">–</b><br>
+    重力 <b id="s-g">–</b> · 时间 <b id="s-ts">–</b><br>
+    黑洞 <b id="s-bh">关</b> · 状态 <b id="s-run">运行</b>
+  </div>
+</aside>
+
+<div id="hint" class="panel">
+  <b>点空白</b> 发射钢球 · <b>点物体</b> 戳一下 · <b>拖物体</b> 抓起/抛出 · <b>拖空白</b> 旋转 · <b>右键拖</b> 平移 · <b>滚轮</b> 缩放 ·
+  快捷键 <b>空格</b> 发射 <b>G</b> 零重力 <b>B</b> 黑洞 <b>F</b> 冲击波 <b>P</b> 暂停 <b>R</b> 清空 <b>H</b> 面板
+</div>
+<div id="toast"></div>
+
+<script>
+  // CDN 加载失败时给出明确提示，而不是黑屏
+  setTimeout(() => { if (!window.__booted) document.getElementById('boot').textContent =
+    '依赖库加载失败：需要能访问 cdn.jsdelivr.net（three.js / cannon-es）。请检查网络后刷新。'; }, 12000);
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import * as CANNON from 'cannon-es';
+
+const $ = id => document.getElementById(id);
+const MAX_BODIES = 700;
+const FIXED_DT = 1 / 60;
+const rand = (a, b) => a + Math.random() * (b - a);
+const pick = arr => arr[(Math.random() * arr.length) | 0];
+
+const state = {
+  env: 'day', palette: [], grid: true, shadows: true, wire: false, sparks: true,
+  gravity: -9.8, zeroG: false, timeScale: 1, paused: false, blackHole: false, audio: false,
+};
+
+/* ---------------- 渲染器 / 场景 ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+$('stage').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(48, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(20, 14, 24);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const hemi = new THREE.HemisphereLight(0xffffff, 0x445566, 0.6);
+const sun = new THREE.DirectionalLight(0xffffff, 2.5);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -30, right: 30, top: 30, bottom: -30, near: 1, far: 140 });
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.02;
+const neonA = new THREE.PointLight(0xff3df0, 0, 70, 2); neonA.position.set(-13, 7, -7);
+const neonB = new THREE.PointLight(0x2ef2ff, 0, 70, 2); neonB.position.set(13, 7, 9);
+scene.add(hemi, sun, sun.target, neonA, neonB);
+
+const groundMat = new THREE.MeshStandardMaterial({ color: 0xe6ebf0, roughness: 0.9 });
+const groundMesh = new THREE.Mesh(new THREE.CircleGeometry(160, 72), groundMat);
+groundMesh.rotation.x = -Math.PI / 2;
+groundMesh.receiveShadow = true;
+scene.add(groundMesh);
+
+let grid = null;
+function makeGrid(c1, c2) {
+  if (grid) { scene.remove(grid); grid.geometry.dispose(); grid.material.dispose(); }
+  grid = new THREE.GridHelper(80, 80, c1, c2);
+  grid.position.y = 0.004;
+  grid.material.transparent = true; grid.material.opacity = 0.4; grid.material.depthWrite = false;
+  grid.visible = state.grid;
+  scene.add(grid);
+}
+
+const stars = (() => {
+  const n = 2200, p = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const u = Math.random() * 2 - 1, t = Math.random() * Math.PI * 2, r = 220, s = Math.sqrt(1 - u * u);
+    p.set([r * s * Math.cos(t), Math.abs(r * u) * 0.9 + 5, r * s * Math.sin(t)], i * 3);
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(p, 3));
+  const m = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xffffff, size: 0.9, sizeAttenuation: true, fog: false }));
+  m.visible = false; scene.add(m); return m;
+})();
+
+function gradientTex(top, bottom) {
+  const c = document.createElement('canvas'); c.width = 2; c.height = 256;
+  const g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 256);
+  gr.addColorStop(0, top); gr.addColorStop(1, bottom); g.fillStyle = gr; g.fillRect(0, 0, 2, 256);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+
+/* ---------------- 实例化物体池 ---------------- */
+const mats = {
+  sphere: new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.85, roughness: 0.22 }),
+  box: new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.05, roughness: 0.5 }),
+  cyl: new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.45, roughness: 0.32 }),
+};
+const geos = {
+  sphere: new THREE.SphereGeometry(1, 32, 20),
+  box: new RoundedBoxGeometry(1, 1, 1, 3, 0.07),
+  cyl: new THREE.CylinderGeometry(1, 1, 1, 28),
+};
+const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3();
+
+class Pool {
+  constructor(type) {
+    const mesh = new THREE.InstancedMesh(geos[type], mats[type], MAX_BODIES);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_BODIES * 3), 3);
+    mesh.count = 0; mesh.castShadow = mesh.receiveShadow = true; mesh.frustumCulled = false;
+    scene.add(mesh);
+    this.mesh = mesh; this.items = [];
+  }
+  add(it) {
+    it.idx = this.items.length; this.items.push(it);
+    this.mesh.setColorAt(it.idx, it.color); this.mesh.instanceColor.needsUpdate = true;
+    this.mesh.count = this.items.length;
+  }
+  remove(it) {
+    const last = this.items.pop();
+    if (last !== it) {
+      this.items[it.idx] = last; last.idx = it.idx;
+      this.mesh.setColorAt(last.idx, last.color); this.mesh.instanceColor.needsUpdate = true;
+    }
+    this.mesh.count = this.items.length;
+  }
+  sync() {
+    for (const it of this.items) {
+      const b = it.body, ip = b.interpolatedPosition, iq = b.interpolatedQuaternion;
+      _m.compose(_p.set(ip.x, ip.y, ip.z), _q.set(iq.x, iq.y, iq.z, iq.w), it.scale);
+      this.mesh.setMatrixAt(it.idx, _m);
+    }
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+}
+const pools = { sphere: new Pool('sphere'), box: new Pool('box'), cyl: new Pool('cyl') };
+const poolList = Object.values(pools);
+
+/* ---------------- 物理世界 ---------------- */
+const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.8, 0), allowSleep: true });
+world.broadphase = new CANNON.SAPBroadphase(world);
+world.solver.iterations = 10;
+world.solver.tolerance = 0.0005;
+Object.assign(world.defaultContactMaterial, { friction: 0.35, restitution: 0.3, contactEquationStiffness: 1e7, contactEquationRelaxation: 3 });
+const groundPhys = new CANNON.Material('ground');
+const groundBody = new CANNON.Body({ mass: 0, shape: new CANNON.Plane(), material: groundPhys });
+groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+world.addBody(groundBody);
+// 骨牌：cannon 的摩擦按重力估算滑动上限，斜靠时会被高估，骨牌会互相撑住不倒；
+// 实测骨牌间摩擦取 0、与地面取 1.0（底部不打滑）时连锁才能完整传下去
+const dominoMat = new CANNON.Material('domino');
+world.addContactMaterial(new CANNON.ContactMaterial(dominoMat, dominoMat, { friction: 0, restitution: 0.05 }));
+world.addContactMaterial(new CANNON.ContactMaterial(dominoMat, groundPhys, { friction: 1.0, restitution: 0 }));
+const ZERO = new CANNON.Vec3();
+
+const items = [];   // 按生成顺序，超上限时淘汰最早的
+let rigs = [];      // 牛顿摆：{ item, anchors:[Vec3], parts:[{c, ab}] }
+const rigGroup = new THREE.Group(); scene.add(rigGroup);
+
+function volume(type, d) {
+  if (type === 'sphere') return 4 / 3 * Math.PI * d[0] ** 3;
+  if (type === 'box') return d[0] * d[1] * d[2];
+  return Math.PI * d[0] * d[0] * d[1];
+}
+
+function spawn(type, dims, pos, o = {}) {
+  if (items.length >= MAX_BODIES) removeItem(items.find(i => !i.rig) || items[0]);
+  let shape, scale;
+  if (type === 'sphere') { shape = new CANNON.Sphere(dims[0]); scale = new THREE.Vector3(dims[0], dims[0], dims[0]); }
+  else if (type === 'box') { shape = new CANNON.Box(new CANNON.Vec3(dims[0] / 2, dims[1] / 2, dims[2] / 2)); scale = new THREE.Vector3(dims[0], dims[1], dims[2]); }
+  else { shape = new CANNON.Cylinder(dims[0], dims[0], dims[1], 12); scale = new THREE.Vector3(dims[0], dims[1], dims[0]); }
+  const mass = o.mass ?? Math.max(0.12, volume(type, dims) * (o.density ?? 1.2));
+  const body = new CANNON.Body({
+    mass, shape, material: o.material, position: new CANNON.Vec3(pos.x, pos.y, pos.z),
+    linearDamping: o.linDamp ?? 0.01, angularDamping: o.angDamp ?? 0.03, sleepSpeedLimit: 0.15, sleepTimeLimit: 0.6,
+  });
+  if (o.quat) body.quaternion.copy(o.quat);
+  if (o.vel) body.velocity.set(o.vel.x, o.vel.y, o.vel.z);
+  if (o.angVel) body.angularVelocity.set(o.angVel.x, o.angVel.y, o.angVel.z);
+  body.interpolatedPosition.copy(body.position);
+  body.interpolatedQuaternion.copy(body.quaternion);
+  const color = new THREE.Color(o.color || pick(state.palette));
+  const it = { type, dims, body, scale, color, hex: '#' + color.getHexString(), rig: false };
+  body.__item = it;
+  body.addEventListener('collide', onCollide);
+  world.addBody(body);
+  pools[type].add(it);
+  items.push(it);
+  return it;
+}
+
+function removeItem(it) {
+  if (!it) return;
+  if (grab && grab.item === it) endGrab();
+  world.removeBody(it.body);
+  pools[it.type].remove(it);
+  items.splice(items.indexOf(it), 1);
+  if (it.rig) {
+    const r = rigs.find(r => r.item === it);
+    if (r) { r.parts.forEach(({ c, ab }) => { world.removeConstraint(c); world.removeBody(ab); }); rigs = rigs.filter(x => x !== r); }
+    if (!rigs.length) clearRigVisuals();
+  }
+}
+
+function clearScene() {
+  while (items.length) removeItem(items[items.length - 1]);
+  clearRigVisuals();
+}
+
+function randomRot() {
+  const q = new CANNON.Quaternion();
+  q.setFromEuler(rand(0, 6.28), rand(0, 6.28), rand(0, 6.28));
+  return q;
+}
+function randomBody(type, pos, extra = {}) {
+  type = type || pick(['sphere', 'box', 'cyl']);
+  const dims = type === 'sphere' ? [rand(0.35, 0.85)]
+    : type === 'box' ? [rand(0.6, 1.6), rand(0.6, 1.6), rand(0.6, 1.6)]
+    : [rand(0.35, 0.75), rand(0.6, 1.8)];
+  return spawn(type, dims, pos, { quat: randomRot(), angVel: { x: rand(-3, 3), y: rand(-3, 3), z: rand(-3, 3) }, ...extra });
+}
+
+/* ---------------- 碰撞反馈：火花 + 音效 ---------------- */
+const SPARKS = 600;
+const sparkPos = new Float32Array(SPARKS * 3).fill(-999), sparkVel = new Float32Array(SPARKS * 3), sparkLife = new Float32Array(SPARKS);
+let sparkHead = 0;
+const sparkGeo = new THREE.BufferGeometry();
+sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPos, 3).setUsage(THREE.DynamicDrawUsage));
+const sparkPts = new THREE.Points(sparkGeo, new THREE.PointsMaterial({
+  color: 0xffc46b, size: 0.13, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false,
+}));
+sparkPts.frustumCulled = false; scene.add(sparkPts);
+
+function emitSparks(p, n, speed) {
+  for (let i = 0; i < n; i++) {
+    const k = sparkHead; sparkHead = (sparkHead + 1) % SPARKS;
+    const th = rand(0, Math.PI * 2), up = rand(0.2, 1), s = speed * rand(0.4, 1);
+    sparkPos.set([p.x, p.y, p.z], k * 3);
+    sparkVel.set([Math.cos(th) * s * (1 - up * 0.5), up * s, Math.sin(th) * s * (1 - up * 0.5)], k * 3);
+    sparkLife[k] = rand(0.3, 0.7);
+  }
+}
+function updateSparks(dt) {
+  for (let k = 0; k < SPARKS; k++) {
+    if (sparkLife[k] <= 0) continue;
+    sparkLife[k] -= dt;
+    const j = k * 3;
+    sparkVel[j + 1] -= 9.8 * dt;
+    sparkPos[j] += sparkVel[j] * dt; sparkPos[j + 1] += sparkVel[j + 1] * dt; sparkPos[j + 2] += sparkVel[j + 2] * dt;
+    if (sparkLife[k] <= 0 || sparkPos[j + 1] < 0) { sparkLife[k] = 0; sparkPos[j + 1] = -999; }
+  }
+  sparkGeo.attributes.position.needsUpdate = true;
+}
+
+let actx = null, master = null, noiseBuf = null, lastSound = 0;
+function initAudio() {
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+  master = actx.createGain(); master.gain.value = 0.8; master.connect(actx.destination);
+  noiseBuf = actx.createBuffer(1, actx.sampleRate * 0.1, actx.sampleRate);
+  const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+}
+function playImpact(v, type) {
+  if (!state.audio || !actx) return;
+  const now = actx.currentTime;
+  if (now - lastSound < 0.025) return;
+  lastSound = now;
+  const vol = Math.min(0.32, v / 45), base = { sphere: 900, box: 230, cyl: 430 }[type] * rand(0.85, 1.15);
+  const g = actx.createGain(); g.gain.setValueAtTime(vol, now); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+  const o = actx.createOscillator(); o.type = type === 'sphere' ? 'sine' : 'triangle';
+  o.frequency.setValueAtTime(base, now); o.frequency.exponentialRampToValueAtTime(base * 0.55, now + 0.15);
+  o.connect(g).connect(master); o.start(now); o.stop(now + 0.2);
+  const n = actx.createBufferSource(); n.buffer = noiseBuf;
+  const f = actx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = base * 3; f.Q.value = 1.2;
+  const ng = actx.createGain(); ng.gain.setValueAtTime(vol * 0.7, now); ng.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
+  n.connect(f).connect(ng).connect(master); n.start(now); n.stop(now + 0.06);
+}
+
+const _cp = new CANNON.Vec3();
+let impactsThisSecond = 0;
+function onCollide(e) {
+  const other = e.body;
+  if (other.__item && other.id < e.target.id) return; // 物体互撞时两侧都会触发，只处理一次
+  const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
+  if (v < 2) return;
+  impactsThisSecond++;
+  playImpact(v, e.target.__item.type);
+  if (state.sparks && v > 4) {
+    const c = e.contact; c.bi.position.vadd(c.ri, _cp);
+    emitSparks(_cp, Math.min(18, (v * 1.6) | 0), Math.min(9, v * 0.6));
+  }
+}
+
+/* ---------------- 力场 ---------------- */
+const bh = new THREE.Group();
+bh.add(new THREE.Mesh(new THREE.SphereGeometry(0.75, 32, 16), new THREE.MeshBasicMaterial({ color: 0x000000 })));
+const ringMat = new THREE.MeshBasicMaterial({ color: 0xb98bff, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
+const ring1 = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.06, 10, 96), ringMat); ring1.rotation.x = Math.PI / 2;
+const ring2 = new THREE.Mesh(new THREE.TorusGeometry(2.1, 0.035, 8, 96), ringMat); ring2.rotation.x = Math.PI / 2.4;
+const bhLight = new THREE.PointLight(0xb98bff, 60, 30, 2);
+bh.add(ring1, ring2, bhLight);
+bh.position.set(0, 7, 0); bh.visible = false; scene.add(bh);
+
+const _f = new CANNON.Vec3();
+world.addEventListener('preStep', () => {
+  if (!state.blackHole) return;
+  const C = bh.position;
+  for (const it of items) {
+    const b = it.body;
+    const dx = C.x - b.position.x, dy = C.y - b.position.y, dz = C.z - b.position.z;
+    const r2 = dx * dx + dy * dy + dz * dz, r = Math.sqrt(r2) || 1e-3;
+    const a = Math.min(40, 2000 / Math.max(r2, 1.5));
+    const swirl = a * 0.3 / r;
+    _f.set((dx / r) * a * b.mass - dz * swirl * b.mass, (dy / r) * a * b.mass, (dz / r) * a * b.mass + dx * swirl * b.mass);
+    b.applyForce(_f, ZERO);
+    b.velocity.scale(r < 3 ? 0.9 : 0.985, b.velocity); // 引力场内加阻尼，避免弹弓效应把物体甩出场外
+    if (b.sleepState === CANNON.Body.SLEEPING) b.wakeUp();
+  }
+});
+
+const blastRings = [];
+function shockwave(origin = new THREE.Vector3(0, 0, 0)) {
+  for (const it of items) {
+    const b = it.body;
+    const dx = b.position.x - origin.x, dz = b.position.z - origin.z, dy = b.position.y - origin.y;
+    const d = Math.hypot(dx, dy, dz);
+    if (d > 26) continue;
+    const k = 16 * b.mass * (1 - d / 26) / Math.max(d, 0.5);
+    b.wakeUp();
+    b.applyImpulse(new CANNON.Vec3(dx * k, Math.max(dy, 0) * k + 7 * b.mass * (1 - d / 26), dz * k), ZERO);
+  }
+  const m = new THREE.Mesh(new THREE.RingGeometry(0.85, 1, 72), new THREE.MeshBasicMaterial({
+    color: 0x7fe0ff, transparent: true, opacity: 0.9, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false,
+  }));
+  m.rotation.x = -Math.PI / 2; m.position.set(origin.x, 0.05, origin.z);
+  scene.add(m); blastRings.push({ m, t: 0 });
+  toast('径向冲击波已释放');
+}
+function updateBlast(dt) {
+  for (let i = blastRings.length - 1; i >= 0; i--) {
+    const r = blastRings[i]; r.t += dt;
+    const s = 1 + r.t * 45; r.m.scale.set(s, s, s); r.m.material.opacity = Math.max(0, 0.9 - r.t * 1.6);
+    if (r.t > 0.6) { scene.remove(r.m); r.m.geometry.dispose(); r.m.material.dispose(); blastRings.splice(i, 1); }
+  }
+}
+
+/* ---------------- 场景搭建 ---------------- */
+function buildTower() {
+  const L = 15, h = 0.6, w = 1, len = 3, gap = 0.02, pal = state.palette;
+  for (let i = 0; i < L; i++) for (let j = -1; j <= 1; j++) {
+    const y = h / 2 + i * (h + 0.003) + 0.002, c = pal[(i + j + 3) % pal.length];
+    if (i % 2 === 0) spawn('box', [len, h, w], { x: 0, y, z: j * (w + gap) }, { color: c, density: 0.8 });
+    else spawn('box', [w, h, len], { x: j * (w + gap), y, z: 0 }, { color: c, density: 0.8 });
+  }
+  toast(`叠叠高塔：${L * 3} 块。点它或抓一块抽出来试试`);
+}
+
+function buildPyramid() {
+  const base = 7, s = 1, gap = 0.02;
+  let n = 0;
+  for (let l = 0; l < base; l++) {
+    const k = base - l, off = (k - 1) * (s + gap) / 2;
+    for (let i = 0; i < k; i++) for (let j = 0; j < k; j++) {
+      spawn('box', [s, s, s], { x: i * (s + gap) - off, y: s / 2 + l * (s + 0.003) + 0.002, z: j * (s + gap) - off },
+        { color: state.palette[l % state.palette.length] }); n++;
+    }
+  }
+  toast(`方块金字塔：${n} 块`);
+}
+
+function buildDominoes() {
+  const pts = [], spacing = 0.95, A = 5, P = 3.2;
+  let prev = null, acc = 0;
+  for (let x = -17; x <= 17; x += 0.01) {
+    const z = A * Math.sin(x / P);
+    if (prev) acc += Math.hypot(x - prev.x, z - prev.z);
+    if (!prev || acc >= spacing) { pts.push({ x, z, th: Math.atan2(A / P * Math.cos(x / P), 1) }); acc = 0; }
+    prev = { x, z };
+  }
+  const axisY = new CANNON.Vec3(0, 1, 0);
+  const made = pts.map((p, i) => {
+    const q = new CANNON.Quaternion(); q.setFromAxisAngle(axisY, -p.th);
+    return spawn('box', [0.22, 1.7, 0.85], { x: p.x, y: 0.851, z: p.z },
+      { quat: q, material: dominoMat, color: state.palette[Math.floor(i / 4) % state.palette.length], density: 1.4 });
+  });
+  // 刚开始倾倒时速度很慢，若允许休眠会在半路“冻住”，连锁中断
+  made.forEach(it => { it.body.allowSleep = false; });
+  setTimeout(() => made.forEach(it => { if (items.includes(it)) it.body.allowSleep = true; }), 15000);
+  const first = made[0], th = pts[0].th;
+  setTimeout(() => {
+    if (!items.includes(first)) return;
+    const b = first.body; b.wakeUp();
+    b.angularVelocity.set(Math.sin(th) * 2, 0, -Math.cos(th) * 2); // 绕底边向前倾倒
+  }, 900);
+  toast(`多米诺：${made.length} 块，1 秒后自动推倒第一块`);
+}
+
+let strings = null;
+function clearRigVisuals() {
+  rigGroup.children.slice().forEach(c => { rigGroup.remove(c); c.geometry?.dispose(); });
+  strings = null;
+}
+function buildCradle(gapB = 0.004) {
+  const n = 5, r = 0.55, L = 3.4, topY = 7.4, half = 1.5;
+  const x0 = -(n - 1) / 2 * (2 * r + gapB);
+  const frameMat = new THREE.MeshStandardMaterial({ color: 0x9aa4b2, metalness: 0.9, roughness: 0.25 });
+  const xa = x0 - 1.6, xb = -x0 + 1.6;
+  for (const z of [-half, half]) {
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, xb - xa, 16), frameMat);
+    bar.rotation.z = Math.PI / 2; bar.position.set(0, topY, z); bar.castShadow = true; rigGroup.add(bar);
+    for (const x of [xa, xb]) {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, topY, 16), frameMat);
+      leg.position.set(x, topY / 2, z); leg.castShadow = true; rigGroup.add(leg);
+    }
+  }
+  for (let i = 0; i < n; i++) {
+    const x = x0 + i * (2 * r + gapB);
+    const a = i === 0 ? 0.95 : 0;
+    const pos = { x: x - L * Math.sin(a), y: topY - L * Math.cos(a), z: 0 };
+    const it = spawn('sphere', [r], pos, { color: '#dfe4ec', density: 8, linDamp: 0, angDamp: 0.2 });
+    it.rig = true; it.body.allowSleep = false;
+    it.body.collisionFilterGroup = CRADLE_GROUP; it.body.collisionFilterMask = ~CRADLE_GROUP;
+    const anchors = [new CANNON.Vec3(x, topY, -half), new CANNON.Vec3(x, topY, half)];
+    const parts = anchors.map(a => {
+      const ab = new CANNON.Body({ mass: 0, shape: new CANNON.Sphere(0.01), position: a.clone() });
+      ab.collisionFilterGroup = 0; ab.collisionFilterMask = 0;
+      world.addBody(ab);
+      const c = new CANNON.DistanceConstraint(it.body, ab, a.distanceTo(it.body.position));
+      world.addConstraint(c);
+      return { c, ab };
+    });
+    rigs.push({ item: it, anchors, parts });
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 2 * 2 * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  strings = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xcfd6e0, transparent: true, opacity: 0.8 }));
+  strings.frustumCulled = false; rigGroup.add(strings);
+  toast('牛顿摆：双绳距离约束 + 弹性碰撞。可以拖起一颗或两颗球再松手');
+}
+// 摆球之间不走 cannon 的接触求解：顺序冲量 + 位置修正在一排紧贴的球上会凭空注入能量（实测末球摆得比初始还高）。
+// 这里按一维等质量弹性碰撞精确交换法向速度，多轮扫描让冲量在同一步内沿整排球传递。
+const CRADLE_GROUP = 4, CRADLE_E = 0.995;
+const _n = new CANNON.Vec3();
+world.addEventListener('postStep', () => {
+  if (rigs.length < 2) return;
+  for (let pass = 0; pass < rigs.length; pass++) {
+    let changed = false;
+    for (let i = 0; i < rigs.length - 1; i++) {
+      const a = rigs[i].item.body, b = rigs[i + 1].item.body;
+      const ra = rigs[i].item.dims[0], rb = rigs[i + 1].item.dims[0];
+      b.position.vsub(a.position, _n);
+      const d = _n.length();
+      if (d > ra + rb + 0.012 || d === 0) continue;
+      _n.scale(1 / d, _n);
+      const rel = a.velocity.dot(_n) - b.velocity.dot(_n);
+      if (d < ra + rb) { const push = (ra + rb - d) / 2; a.position.addScaledVector(-push, _n, a.position); b.position.addScaledVector(push, _n, b.position); }
+      if (rel <= 1e-4) continue;
+      const j = (1 + CRADLE_E) / 2 * rel;
+      a.velocity.addScaledVector(-j, _n, a.velocity);
+      b.velocity.addScaledVector(j, _n, b.velocity);
+      changed = true;
+    }
+    if (!changed) break;
+  }
+});
+function updateRigs() {
+  if (!strings) return;
+  const arr = strings.geometry.attributes.position.array;
+  let k = 0;
+  for (const r of rigs) {
+    const p = r.item.body.interpolatedPosition;
+    for (const a of r.anchors) { arr[k++] = a.x; arr[k++] = a.y; arr[k++] = a.z; arr[k++] = p.x; arr[k++] = p.y; arr[k++] = p.z; }
+  }
+  strings.geometry.setDrawRange(0, k / 3);
+  strings.geometry.attributes.position.needsUpdate = true;
+}
+
+function rain(n) {
+  for (let i = 0; i < n; i++) randomBody(null, { x: rand(-10, 10), y: rand(8, 22), z: rand(-10, 10) });
+  toast(`投放 ${n} 个随机刚体（场上 ${items.length}/${MAX_BODIES}）`);
+}
+
+/* ---------------- 交互：发射 / 戳 / 抓取 ---------------- */
+const controls = new OrbitControls(camera, renderer.domElement);
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+const jointBody = new CANNON.Body({ mass: 0 });
+jointBody.collisionFilterGroup = 0; jointBody.collisionFilterMask = 0;
+world.addBody(jointBody);
+const grabMarker = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 8), new THREE.MeshBasicMaterial({ color: 0x5cc8ff }));
+grabMarker.visible = false; scene.add(grabMarker);
+let down = null, grab = null;
+
+function setRay(clientX, clientY) {
+  const r = renderer.domElement.getBoundingClientRect();
+  ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+}
+function pickItem() {
+  for (const p of poolList) { p.mesh.boundingSphere = null; p.mesh.boundingBox = null; }
+  const hit = ray.intersectObjects(poolList.map(p => p.mesh), false)[0];
+  if (!hit) return null;
+  const pool = poolList.find(p => p.mesh === hit.object);
+  return { item: pool.items[hit.instanceId], point: hit.point };
+}
+function startGrab(hit) {
+  const b = hit.item.body, pt = hit.point;
+  const local = b.quaternion.inverse().vmult(new CANNON.Vec3(pt.x - b.position.x, pt.y - b.position.y, pt.z - b.position.z));
+  jointBody.position.set(pt.x, pt.y, pt.z);
+  const c = new CANNON.PointToPointConstraint(b, local, jointBody, new CANNON.Vec3(), 400 * b.mass + 50);
+  world.addConstraint(c);
+  b.wakeUp();
+  const n = new THREE.Vector3(); camera.getWorldDirection(n);
+  grab = { item: hit.item, c, point: pt.clone(), plane: new THREE.Plane().setFromNormalAndCoplanarPoint(n.negate(), pt), damp: b.angularDamping };
+  b.angularDamping = 0.6;
+  grabMarker.visible = true; grabMarker.position.copy(pt);
+}
+function endGrab() {
+  if (!grab) return;
+  world.removeConstraint(grab.c);
+  grab.item.body.angularDamping = grab.damp;
+  grab = null; grabMarker.visible = false;
+}
+function shoot(dir) {
+  const o = camera.position.clone().addScaledVector(dir, 1.5);
+  spawn('sphere', [0.36], o, { color: '#eef2f7', density: 7, vel: dir.clone().multiplyScalar(30) });
+}
+function poke(it, pt) {
+  const b = it.body; b.wakeUp();
+  const d = ray.ray.direction;
+  b.applyImpulse(new CANNON.Vec3(d.x * 7 * b.mass, d.y * 7 * b.mass + 2 * b.mass, d.z * 7 * b.mass),
+    new CANNON.Vec3(pt.x - b.position.x, pt.y - b.position.y, pt.z - b.position.z));
+}
+
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
+  setRay(e.clientX, e.clientY);
+  down = { x: e.clientX, y: e.clientY, moved: false };
+  const hit = pickItem();
+  if (hit) { controls.enabled = false; startGrab(hit); }
+}, true);
+addEventListener('pointermove', e => {
+  if (!down) return;
+  if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) down.moved = true;
+  if (grab) {
+    setRay(e.clientX, e.clientY);
+    if (ray.ray.intersectPlane(grab.plane, _p)) {
+      _p.y = Math.max(_p.y, 0.25);
+      jointBody.position.set(_p.x, _p.y, _p.z); grabMarker.position.copy(_p);
+    }
+  }
+});
+addEventListener('pointerup', e => {
+  if (!down) return;
+  const click = !down.moved;
+  if (grab) { const { item, point } = grab; endGrab(); if (click) poke(item, point); }
+  else if (click) { setRay(e.clientX, e.clientY); shoot(ray.ray.direction.clone()); }
+  down = null; controls.enabled = true;
+});
+
+controls.target.set(0, 2.5, 0);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.49;
+controls.minDistance = 6; controls.maxDistance = 90;
+controls.update();
+
+/* ---------------- 环境预设 ---------------- */
+const PRESETS = {
+  day: { bg: ['#8fc1ee', '#e9f1f8'], fog: 0xe9f1f8, ground: 0xe4e9ef, rough: 0.92, hemi: [0xffffff, 0x8a9bb0, 0.8], sun: [0xffffff, 2.8], env: 0.7, neon: 0, grid: [0x7d8fa5, 0xb9c5d3], stars: false, elev: 55, azim: 35, sparks: 0xffb347,
+    palette: ['#4f8ef7', '#f2c14e', '#ef6f6c', '#43c59e', '#9b7bf7', '#5fd1e8'] },
+  sunset: { bg: ['#2f2552', '#ffae78'], fog: 0xeea07c, ground: 0xd7b39c, rough: 0.85, hemi: [0xffd2b0, 0x5a3b4a, 0.6], sun: [0xff9550, 3.4], env: 0.5, neon: 0, grid: [0x8a5a50, 0xb88a78], stars: false, elev: 11, azim: 250, sparks: 0xffd27a,
+    palette: ['#ff8a5b', '#ffd166', '#ef476f', '#8e7dbe', '#f4a261', '#2a9d8f'] },
+  neon: { bg: ['#04050d', '#1c0b36'], fog: 0x0a0717, ground: 0x0c0e19, rough: 0.3, hemi: [0x4050ff, 0x080810, 0.3], sun: [0x8899ff, 0.7], env: 0.35, neon: 900, grid: [0xff3df0, 0x2ef2ff], stars: false, elev: 62, azim: 120, sparks: 0x7ff6ff,
+    palette: ['#ff3df0', '#2ef2ff', '#b4ff39', '#ffe23d', '#7a5cff', '#ff6b3d'] },
+  space: { bg: ['#000000', '#05070d'], fog: null, ground: 0x1b1e26, rough: 0.95, hemi: [0x8090b0, 0x000000, 0.15], sun: [0xffffff, 3.6], env: 0.25, neon: 0, grid: [0x3a4558, 0x252c38], stars: true, elev: 22, azim: 300, sparks: 0xffffff,
+    palette: ['#d9dde4', '#9fb4d6', '#e7c27a', '#c9a0dc', '#7fd1c7', '#f08a7e'] },
+};
+function applyPreset(name) {
+  const P = PRESETS[name]; if (!P) return;
+  state.env = name; state.palette = P.palette;
+  if (scene.background?.dispose) scene.background.dispose();
+  scene.background = gradientTex(P.bg[0], P.bg[1]);
+  scene.fog = P.fog === null ? null : new THREE.Fog(P.fog, 55, 170);
+  groundMat.color.set(P.ground); groundMat.roughness = P.rough;
+  hemi.color.set(P.hemi[0]); hemi.groundColor.set(P.hemi[1]); hemi.intensity = P.hemi[2];
+  sun.color.set(P.sun[0]); sun.intensity = P.sun[1];
+  for (const m of [...Object.values(mats), groundMat]) m.envMapIntensity = P.env;
+  neonA.intensity = neonB.intensity = P.neon;
+  sparkPts.material.color.set(P.sparks);
+  stars.visible = P.stars;
+  makeGrid(P.grid[0], P.grid[1]);
+  $('r-elev').value = P.elev; $('r-azim').value = P.azim; updateSun();
+  document.querySelectorAll('[data-preset]').forEach(b => b.classList.toggle('on', b.dataset.preset === name));
+}
+function updateSun() {
+  const e = THREE.MathUtils.degToRad(+$('r-elev').value), a = THREE.MathUtils.degToRad(+$('r-azim').value);
+  sun.position.set(Math.cos(e) * Math.sin(a), Math.sin(e), Math.cos(e) * Math.cos(a)).multiplyScalar(50);
+  $('v-elev').textContent = $('r-elev').value + '°'; $('v-azim').textContent = $('r-azim').value + '°';
+}
+
+/* ---------------- 参数绑定 ---------------- */
+function updateParams() {
+  state.gravity = +$('r-grav').value;
+  world.gravity.set(0, state.zeroG ? 0 : state.gravity, 0);
+  world.defaultContactMaterial.restitution = +$('r-rest').value;
+  world.defaultContactMaterial.friction = +$('r-fric').value;
+  state.timeScale = +$('r-time').value;
+  $('v-grav').textContent = state.gravity.toFixed(1) + ' m/s²';
+  $('v-rest').textContent = (+$('r-rest').value).toFixed(2);
+  $('v-fric').textContent = (+$('r-fric').value).toFixed(2);
+  $('v-time').textContent = state.timeScale.toFixed(2) + '×';
+  for (const it of items) it.body.wakeUp();
+}
+['r-grav', 'r-rest', 'r-fric', 'r-time'].forEach(id => $(id).addEventListener('input', updateParams));
+['r-elev', 'r-azim'].forEach(id => $(id).addEventListener('input', updateSun));
+
+function setToggle(id, on) { $(id).classList.toggle('on', on); }
+const actions = {
+  zeroG() { state.zeroG = !state.zeroG; setToggle('b-zerog', state.zeroG); updateParams(); toast(state.zeroG ? '零重力：开' : `零重力：关（g = ${state.gravity}）`); },
+  hole() { state.blackHole = !state.blackHole; bh.visible = state.blackHole; setToggle('b-hole', state.blackHole); toast(state.blackHole ? '黑洞引力场：开（带旋转分量）' : '黑洞引力场：关'); },
+  pause() { state.paused = !state.paused; $('b-pause').textContent = state.paused ? '▶ 继续' : '⏸ 暂停'; setToggle('b-pause', state.paused); },
+  panels() { const hide = !$('left').classList.contains('hidden'); ['left', 'right', 'hint'].forEach(id => $(id).classList.toggle('hidden', hide)); $('b-panels').textContent = hide ? '显示面板' : '隐藏面板'; },
+  clear() { clearScene(); toast('场景已清空'); },
+};
+$('b-zerog').onclick = actions.zeroG;
+$('b-hole').onclick = actions.hole;
+$('b-pause').onclick = actions.pause;
+$('b-panels').onclick = actions.panels;
+$('b-clear').onclick = actions.clear;
+$('b-blast').onclick = () => shockwave();
+$('b-shadow').onclick = () => { state.shadows = !state.shadows; sun.castShadow = state.shadows; setToggle('b-shadow', state.shadows); };
+$('b-grid').onclick = () => { state.grid = !state.grid; grid.visible = state.grid; setToggle('b-grid', state.grid); };
+$('b-wire').onclick = () => { state.wire = !state.wire; Object.values(mats).forEach(m => m.wireframe = state.wire); setToggle('b-wire', state.wire); };
+$('b-sparks').onclick = () => { state.sparks = !state.sparks; setToggle('b-sparks', state.sparks); };
+$('b-audio').onclick = async () => {
+  if (!actx) initAudio();
+  state.audio = !state.audio;
+  if (state.audio) await actx.resume();
+  $('b-audio').textContent = state.audio ? '🔊 音效' : '🔇 音效'; setToggle('b-audio', state.audio);
+};
+document.querySelectorAll('[data-preset]').forEach(b => b.onclick = () => applyPreset(b.dataset.preset));
+document.querySelectorAll('[data-spawn]').forEach(b => b.onclick = () => randomBody(b.dataset.spawn, { x: rand(-3, 3), y: rand(10, 14), z: rand(-3, 3) }));
+document.querySelectorAll('[data-rain]').forEach(b => b.onclick = () => rain(+b.dataset.rain));
+const builders = { tower: buildTower, dominoes: buildDominoes, cradle: buildCradle, pyramid: buildPyramid };
+document.querySelectorAll('[data-build]').forEach(b => b.onclick = () => { if ($('c-clear').checked) clearScene(); builders[b.dataset.build](); });
+$('cap-note').textContent = `上限 ${MAX_BODIES}，超出淘汰最早的`;
+
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' && e.target.type !== 'range') return;
+  const k = e.key.toLowerCase();
+  if (k === ' ') { e.preventDefault(); ray.setFromCamera(new THREE.Vector2(0, 0), camera); shoot(ray.ray.direction.clone()); }
+  else if (k === 'g') actions.zeroG();
+  else if (k === 'b') actions.hole();
+  else if (k === 'f') shockwave();
+  else if (k === 'p') actions.pause();
+  else if (k === 'r') actions.clear();
+  else if (k === 'h') actions.panels();
+});
+
+/* ---------------- 存档（本地 / 文件） ---------------- */
+const SNAP_KEY = 'rigid-sandbox-snapshot-v1';
+const r3 = v => Math.round(v * 1000) / 1000;
+function snapshot() {
+  const real = items.filter(i => !i.rig);
+  return {
+    app: 'rigid-sandbox', version: 1, savedAt: new Date().toISOString(), env: state.env,
+    params: { gravity: state.gravity, zeroG: state.zeroG, restitution: +$('r-rest').value, friction: +$('r-fric').value, timeScale: state.timeScale, elev: +$('r-elev').value, azim: +$('r-azim').value },
+    skippedRigBodies: items.length - real.length,
+    bodies: real.map(i => {
+      const b = i.body;
+      return { t: i.type, d: i.dims.map(r3), c: i.hex, m: r3(b.mass),
+        p: [b.position.x, b.position.y, b.position.z].map(r3), q: [b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w].map(r3),
+        v: [b.velocity.x, b.velocity.y, b.velocity.z].map(r3), w: [b.angularVelocity.x, b.angularVelocity.y, b.angularVelocity.z].map(r3) };
+    }),
+  };
+}
+function restore(s) {
+  if (!s || s.app !== 'rigid-sandbox' || !Array.isArray(s.bodies)) throw new Error('不是本沙盒导出的存档');
+  const ok = n => typeof n === 'number' && isFinite(n);
+  const valid = s.bodies.filter(b => ['sphere', 'box', 'cyl'].includes(b.t) && Array.isArray(b.d) && b.d.every(n => ok(n) && n > 0 && n < 20)
+    && [b.p, b.q, b.v, b.w].every(a => Array.isArray(a) && a.every(ok)) && ok(b.m) && b.m > 0).slice(0, MAX_BODIES);
+  clearScene();
+  applyPreset(PRESETS[s.env] ? s.env : 'day');
+  const P = s.params || {};
+  if (ok(P.gravity)) $('r-grav').value = P.gravity;
+  if (ok(P.restitution)) $('r-rest').value = P.restitution;
+  if (ok(P.friction)) $('r-fric').value = P.friction;
+  if (ok(P.timeScale)) $('r-time').value = P.timeScale;
+  if (ok(P.elev)) $('r-elev').value = P.elev;
+  if (ok(P.azim)) $('r-azim').value = P.azim;
+  state.zeroG = !!P.zeroG; setToggle('b-zerog', state.zeroG);
+  updateParams(); updateSun();
+  for (const b of valid) {
+    spawn(b.t, b.d, { x: b.p[0], y: b.p[1], z: b.p[2] }, {
+      mass: b.m, color: /^#[0-9a-f]{6}$/i.test(b.c) ? b.c : undefined,
+      quat: new CANNON.Quaternion(b.q[0], b.q[1], b.q[2], b.q[3]).normalize(),
+      vel: { x: b.v[0], y: b.v[1], z: b.v[2] }, angVel: { x: b.w[0], y: b.w[1], z: b.w[2] },
+    });
+  }
+  return { loaded: valid.length, dropped: s.bodies.length - valid.length };
+}
+$('b-qsave').onclick = () => {
+  try {
+    const s = snapshot(); localStorage.setItem(SNAP_KEY, JSON.stringify(s));
+    toast(`已存到本浏览器：${s.bodies.length} 个刚体` + (s.skippedRigBodies ? `（牛顿摆 ${s.skippedRigBodies} 球未保存）` : ''));
+  } catch { toast('浏览器禁止本地存储，请改用「导出 JSON 文件」'); }
+};
+$('b-qload').onclick = () => {
+  let raw = null;
+  try { raw = localStorage.getItem(SNAP_KEY); } catch { toast('浏览器禁止本地存储'); return; }
+  if (!raw) { toast('本浏览器里还没有快照'); return; }
+  try { const r = restore(JSON.parse(raw)); toast(`已读取快照：${r.loaded} 个刚体`); } catch (err) { toast('快照损坏：' + err.message); }
+};
+$('b-export').onclick = () => {
+  const s = snapshot();
+  const url = URL.createObjectURL(new Blob([JSON.stringify(s)], { type: 'application/json' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = `rigid-sandbox-${s.savedAt.slice(0, 19).replace(/[:T]/g, '-')}.json`;
+  a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast(`已导出 ${s.bodies.length} 个刚体`);
+};
+$('b-import').onclick = () => $('f-import').click();
+$('f-import').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  f.text().then(t => {
+    try { const r = restore(JSON.parse(t)); toast(`已导入 ${r.loaded} 个刚体` + (r.dropped ? `，${r.dropped} 条数据无效已跳过` : '')); }
+    catch (err) { toast('导入失败：' + err.message); }
+  });
+  e.target.value = '';
+};
+
+/* ---------------- 性能压测 ---------------- */
+let bench = null;
+$('b-bench').onclick = () => {
+  if (bench) { finishBench('已手动停止'); return; }
+  clearScene();
+  bench = { t: 0, next: 0, low: 0, samples: [] };
+  $('b-bench').textContent = '停止压测'; setToggle('b-bench', true);
+  toast('压测中：每 0.3 秒加 25 个刚体，直到帧率持续低于 40 或达到上限');
+};
+function stepBench(dt, fps, physMs) {
+  if (!bench) return;
+  bench.t += dt;
+  if (bench.t >= bench.next && items.length < MAX_BODIES) { rain(25); bench.next = bench.t + 0.3; }
+  if (bench.t > 1.5) {
+    bench.samples.push({ n: items.length, fps, physMs });
+    bench.low = fps < 40 ? bench.low + dt : 0;
+    if (bench.low > 1.5) finishBench(`帧率降到 40 以下`);
+    else if (items.length >= MAX_BODIES && bench.t > bench.next + 3) finishBench(`已到上限 ${MAX_BODIES}`);
+  }
+}
+function finishBench(reason) {
+  const last = bench.samples.slice(-30);
+  const avg = k => last.length ? last.reduce((s, x) => s + x[k], 0) / last.length : 0;
+  toast(`压测结束（${reason}）：${items.length} 个刚体时 ${avg('fps').toFixed(0)} FPS，物理 ${avg('physMs').toFixed(1)} ms/帧`, 6000);
+  bench = null; $('b-bench').textContent = '性能压测'; setToggle('b-bench', false);
+}
+
+/* ---------------- 遥测 ---------------- */
+const hist = { fps: [], ke: [] };
+function drawSpark(cv, data, color, maxHint) {
+  const w = cv.clientWidth, h = cv.clientHeight, dpr = devicePixelRatio || 1;
+  if (cv.width !== w * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  if (data.length < 2) return;
+  const max = Math.max(maxHint, ...data) * 1.1;
+  g.beginPath();
+  data.forEach((v, i) => { const x = i / (100 - 1) * w, y = h - (v / max) * h; i ? g.lineTo(x, y) : g.moveTo(x, y); });
+  g.strokeStyle = color; g.lineWidth = 1.5; g.stroke();
+  g.lineTo((data.length - 1) / 99 * w, h); g.lineTo(0, h); g.closePath();
+  g.fillStyle = color + '22'; g.fill();
+}
+let acc = { t: 0, frames: 0, phys: 0, rend: 0 };
+let lastFps = 60, lastPhys = 0;
+function telemetry(dt, physMs, rendMs) {
+  acc.t += dt; acc.frames++; acc.phys += physMs; acc.rend += rendMs;
+  if (acc.t < 0.5) return;
+  lastFps = acc.frames / acc.t; lastPhys = acc.phys / acc.frames;
+  let awake = 0, ke = 0;
+  for (const it of items) {
+    const b = it.body;
+    if (b.sleepState !== CANNON.Body.SLEEPING) { awake++; ke += 0.5 * b.mass * b.velocity.lengthSquared(); }
+  }
+  hist.fps.push(lastFps); hist.ke.push(ke);
+  if (hist.fps.length > 100) { hist.fps.shift(); hist.ke.shift(); }
+  const fpsColor = lastFps >= 50 ? 'var(--ok)' : lastFps >= 30 ? 'var(--warn)' : 'var(--bad)';
+  $('s-fps').innerHTML = `<span style="color:${fpsColor}">${lastFps.toFixed(0)}</span>`;
+  $('s-fps2').textContent = lastFps.toFixed(1) + ' fps';
+  $('s-bodies').innerHTML = `${awake}<small>/ ${items.length}</small>`;
+  $('s-phys').innerHTML = `${lastPhys.toFixed(1)}<small>ms</small>`;
+  $('s-rend').innerHTML = `${(acc.rend / acc.frames).toFixed(1)}<small>ms</small>`;
+  $('s-ke').textContent = ke < 1000 ? ke.toFixed(1) + ' J' : (ke / 1000).toFixed(2) + ' kJ';
+  $('s-contacts').textContent = world.contacts.length;
+  $('s-calls').textContent = renderer.info.render.calls;
+  $('s-tris').textContent = renderer.info.render.triangles.toLocaleString();
+  $('s-g').textContent = (state.zeroG ? 0 : state.gravity).toFixed(1);
+  $('s-ts').textContent = state.timeScale.toFixed(2) + '×';
+  $('s-bh').textContent = state.blackHole ? '开' : '关';
+  $('s-run').textContent = state.paused ? '暂停' : bench ? '压测中' : '运行';
+  drawSpark($('g-fps'), hist.fps, '#4ade80', 60);
+  drawSpark($('g-ke'), hist.ke, '#5cc8ff', 10);
+  impactsThisSecond = 0;
+  acc = { t: 0, frames: 0, phys: 0, rend: 0 };
+}
+
+let toastTimer = 0;
+function toast(msg, ms = 2400) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+}
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+function frame() {
+  requestAnimationFrame(frame);
+  const dt = Math.min(clock.getDelta(), 0.1);
+  const t0 = performance.now();
+  if (!state.paused) world.step(FIXED_DT, dt * state.timeScale, 6);
+  const physMs = performance.now() - t0;
+
+  for (let i = items.length - 1; i >= 0; i--) {
+    const p = items[i].body.position;
+    if (p.y < -30 || Math.abs(p.x) > 150 || Math.abs(p.z) > 150) removeItem(items[i]);
+  }
+  for (const p of poolList) p.sync();
+  updateRigs();
+  updateSparks(state.paused ? 0 : dt * state.timeScale);
+  updateBlast(dt);
+  if (bh.visible) { ring1.rotation.z += dt * 1.8; ring2.rotation.z -= dt * 1.1; }
+  controls.update();
+
+  const t1 = performance.now();
+  renderer.render(scene, camera);
+  const rendMs = performance.now() - t1;
+  telemetry(dt, physMs, rendMs);
+  stepBench(dt, lastFps, lastPhys);
+}
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// 支持分享链接：?preset=neon&scene=dominoes
+const qs = new URLSearchParams(location.search);
+applyPreset(PRESETS[qs.get('preset')] ? qs.get('preset') : 'day');
+updateParams();
+if (builders[qs.get('scene')]) builders[qs.get('scene')]();
+else {
+  buildTower();
+  for (let i = 0; i < 6; i++) randomBody('sphere', { x: rand(-8, 8), y: rand(6, 12), z: rand(-8, 8) });
+}
+window.__booted = true;
+$('boot').remove();
+window.sandbox = { world, items, spawn, rain, clearScene, buildTower, buildDominoes, buildCradle, buildPyramid, shockwave, snapshot, restore, renderer, scene, camera, pools, state, actions };
+frame();
+</script>
+</body>
+</html>
